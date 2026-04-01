@@ -15,7 +15,6 @@ export class PolyfillService {
 
     const internalId = ManifestService.getInternalId(manifest);
 
-    // Decoding helper for userscript context
     const decodingHelper = `
 function _base64ToUint8Array(base64) {
   const binary = atob(base64);
@@ -26,7 +25,6 @@ function _base64ToUint8Array(base64) {
 }
 `;
 
-    // High-fidelity getURL implementation
     const getURLImpl = `
       getURL: (path) => {
         if (!path) return "";
@@ -40,6 +38,7 @@ function _base64ToUint8Array(base64) {
       }
     `;
 
+    // Ensure all placeholders are replaced, especially INJECTED_MANIFEST
     let combined = `
 ${decodingHelper}
 ${messaging}
@@ -48,7 +47,8 @@ ${abstraction}
 ${polyfillTemplate
   .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
   .replace('{{SCRIPT_ID}}', internalId)
-  .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')}
+  .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
+  .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest))}
 `;
 
     return combined;

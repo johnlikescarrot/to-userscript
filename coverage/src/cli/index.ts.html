@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/79</span>
+                <span class='fraction'>0/82</span>
             </div>
 
 
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/79</span>
+                <span class='fraction'>0/82</span>
             </div>
 
 
@@ -147,7 +147,11 @@
 <a name='L82'></a><a href='#L82'>82</a>
 <a name='L83'></a><a href='#L83'>83</a>
 <a name='L84'></a><a href='#L84'>84</a>
-<a name='L85'></a><a href='#L85'>85</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -180,6 +184,23 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -210,19 +231,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -263,11 +271,13 @@
 <span class="cstat-no" title="statement not covered" >    },</span>
 <span class="cstat-no" title="statement not covered" >    async (argv) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      let source = argv.source as string;</span>
+<span class="cstat-no" title="statement not covered" >      let tempDownloadPath: string | null = null;</span>
+&nbsp;
 <span class="cstat-no" title="statement not covered" >      if (source.startsWith('http')) {</span>
 <span class="cstat-no" title="statement not covered" >        console.log(chalk.blue('Downloading extension...'));</span>
 <span class="cstat-no" title="statement not covered" >        const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;</span>
-<span class="cstat-no" title="statement not covered" >        const tempPath = path.resolve(process.cwd(), `temp-${Date.now()}.zip`);</span>
-<span class="cstat-no" title="statement not covered" >        source = await DownloadService.download(url, tempPath);</span>
+<span class="cstat-no" title="statement not covered" >        tempDownloadPath = path.resolve(process.cwd(), `temp-download-${Date.now()}.zip`);</span>
+<span class="cstat-no" title="statement not covered" >        source = await DownloadService.download(url, tempDownloadPath);</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >      try {</span>
@@ -284,7 +294,10 @@
 <span class="cstat-no" title="statement not covered" >        console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);</span>
 <span class="cstat-no" title="statement not covered" >        process.exit(1);</span>
 <span class="cstat-no" title="statement not covered" >      } finally {</span>
-<span class="cstat-no" title="statement not covered" >        if (source.includes('temp-')) await fs.remove(source).catch(() =&gt; {});</span>
+        // P1: Only cleanup the explicitly tracked temporary download file
+<span class="cstat-no" title="statement not covered" >        if (tempDownloadPath) {</span>
+<span class="cstat-no" title="statement not covered" >          await fs.remove(tempDownloadPath).catch(() =&gt; {});</span>
+<span class="cstat-no" title="statement not covered" >        }</span>
 <span class="cstat-no" title="statement not covered" >      }</span>
 <span class="cstat-no" title="statement not covered" >    }</span>
 <span class="cstat-no" title="statement not covered" >  )</span>
@@ -306,7 +319,6 @@
 <span class="cstat-no" title="statement not covered" >    (yargs) =&gt; yargs.positional('userscript', { type: 'string', demandOption: true }),</span>
 <span class="cstat-no" title="statement not covered" >    async (argv) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >      const filePath = path.resolve(argv.userscript as string);</span>
-      // P2: Use pathToFileURL for Windows compatibility
 <span class="cstat-no" title="statement not covered" >      const fileUrl = pathToFileURL(filePath).href;</span>
 <span class="cstat-no" title="statement not covered" >      console.log('// ==UserScript==');</span>
 <span class="cstat-no" title="statement not covered" >      console.log('// @name        Requirement');</span>
@@ -322,7 +334,7 @@
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-04-01T11:35:56.707Z
+                at 2026-04-01T13:13:18.955Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
