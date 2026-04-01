@@ -7,145 +7,56 @@ async function _storageSet(items) {
         await GM_setValue(key, items[key]);
       }
     }
-    return Promise.resolve();
   } catch (e) {
     _error("GM_setValue error:", e);
-    return Promise.reject(e);
+    throw e;
   }
 }
 
 async function _storageGet(keys) {
-  if (!keys) {
-    keys = null;
-  }
-  if (
-    Array.isArray(keys) &&
-    (keys.length === 0 || [null, undefined].includes(keys[0]))
-  ) {
-    keys = null;
-  }
   try {
     const results = {};
     let keyList = [];
     let defaults = {};
-    let requestedKeys = [];
 
     if (keys === null) {
       keyList = await GM_listValues();
-      requestedKeys = [...keyList];
     } else if (typeof keys === "string") {
       keyList = [keys];
-      requestedKeys = [keys];
     } else if (Array.isArray(keys)) {
       keyList = keys;
-      requestedKeys = [...keys];
     } else if (typeof keys === "object" && keys !== null) {
       keyList = Object.keys(keys);
-      requestedKeys = [...keyList];
       defaults = keys;
     } else {
-      _error("_storageGet error: Invalid keys format", keys);
-      return Promise.reject(new Error("Invalid keys format for get"));
+      throw new Error("Invalid keys format for storage.get");
     }
 
     for (const key of keyList) {
-      const defaultValue = defaults.hasOwnProperty(key)
-        ? defaults[key]
-        : undefined;
-      const storedValue = await GM_getValue(key, defaultValue);
+      const storedValue = await GM_getValue(key, defaults[key]);
       results[key] = storedValue;
     }
 
-    const finalResult = {};
-    for (const key of requestedKeys) {
-      if (results.hasOwnProperty(key)) {
-        finalResult[key] = results[key];
-      } else if (defaults.hasOwnProperty(key)) {
-        finalResult[key] = defaults[key];
-      }
-    }
-
-    return Promise.resolve(finalResult);
+    return results;
   } catch (e) {
-    _error("GM_getValue/GM_listValues error:", e);
-    return Promise.reject(e);
+    _error("storage.get error:", e);
+    throw e;
   }
 }
 
 async function _storageRemove(keysToRemove) {
-  try {
-    let keyList = [];
-    if (typeof keysToRemove === "string") {
-      keyList = [keysToRemove];
-    } else if (Array.isArray(keysToRemove)) {
-      keyList = keysToRemove;
-    } else {
-      _error("_storageRemove error: Invalid keys format", keysToRemove);
-      return Promise.reject(new Error("Invalid keys format for remove"));
-    }
-
-    for (const key of keyList) {
-      await GM_deleteValue(key);
-    }
-    return Promise.resolve();
-  } catch (e) {
-    _error("GM_deleteValue error:", e);
-    return Promise.reject(e);
-  }
+  const list = Array.isArray(keysToRemove) ? keysToRemove : [keysToRemove];
+  for (const k of list) await GM_deleteValue(k);
 }
 
 async function _storageClear() {
-  try {
-    const keys = await GM_listValues();
-    await Promise.all(keys.map((key) => GM_deleteValue(key)));
-    return Promise.resolve();
-  } catch (e) {
-    _error("GM_listValues/GM_deleteValue error during clear:", e);
-    return Promise.reject(e);
-  }
+  const keys = await GM_listValues();
+  for (const k of keys) await GM_deleteValue(k);
 }
 
-async function _cookieList(details) {
-  return new Promise((resolve, reject) => {
-    if (typeof GM_cookie === "undefined" || !GM_cookie.list) {
-      return reject(new Error("GM_cookie.list is not available."));
-    }
-    GM_cookie.list(details, (cookies, error) => {
-      if (error) {
-        return reject(new Error(error));
-      }
-      resolve(cookies);
-    });
-  });
-}
-
-async function _cookieSet(details) {
-  return new Promise((resolve, reject) => {
-    if (typeof GM_cookie === "undefined" || !GM_cookie.set) {
-      return reject(new Error("GM_cookie.set is not available."));
-    }
-    GM_cookie.set(details, (error) => {
-      if (error) {
-        return reject(new Error(error));
-      }
-      resolve();
-    });
-  });
-}
-
-async function _cookieDelete(details) {
-  return new Promise((resolve, reject) => {
-    if (typeof GM_cookie === "undefined" || !GM_cookie.delete) {
-      return reject(new Error("GM_cookie.delete is not available."));
-    }
-    GM_cookie.delete(details, (error) => {
-      if (error) {
-        return reject(new Error(error));
-      }
-      resolve();
-    });
-  });
-}
+async function _cookieList(d) { return (typeof GM_cookie !== 'undefined' && GM_cookie.list) ? new Promise((res, rej) => GM_cookie.list(d, (c, e) => e ? rej(e) : res(c))) : []; }
+async function _cookieSet(d) { return (typeof GM_cookie !== 'undefined' && GM_cookie.set) ? new Promise((res, rej) => GM_cookie.set(d, (e) => e ? rej(e) : res())) : Promise.reject('GM_cookie.set N/A'); }
+async function _cookieDelete(d) { return (typeof GM_cookie !== 'undefined' && GM_cookie.delete) ? new Promise((res, rej) => GM_cookie.delete(d, (e) => e ? rej(e) : res())) : Promise.reject('GM_cookie.delete N/A'); }
 
 async function _fetch(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -156,128 +67,43 @@ async function _fetch(url, options = {}) {
         headers: options.headers || {},
         data: options.body,
         responseType: options.responseType,
-        timeout: options.timeout || 0,
-        binary:
-          options.responseType === "blob" ||
-          options.responseType === "arraybuffer",
-        onload: function (response) {
+        onload: function (resp) {
           const responseHeaders = {};
-          if (response.responseHeaders) {
-            response.responseHeaders
-              .trim()
-              .split("\\r\\n")
-              .forEach((header) => {
-                const parts = header.match(/^([^:]+):\s*(.*)$/);
-                if (parts && parts.length === 3) {
-                  responseHeaders[parts[1].toLowerCase()] = parts[2];
-                }
-              });
+          if (resp.responseHeaders) {
+            resp.responseHeaders.trim().split("\r\n").forEach((h) => {
+                const parts = h.match(/^([^:]+):\s*(.*)$/);
+                if (parts) responseHeaders[parts[1].toLowerCase()] = parts[2];
+            });
           }
 
-          const mockResponse = {
-            ok: response.status >= 200 && response.status < 300,
-            status: response.status,
-            statusText:
-              response.statusText ||
-              (response.status >= 200 && response.status < 300 ? "OK" : ""),
-            url: response.finalUrl || url,
+          const mock = {
+            ok: resp.status >= 200 && resp.status < 300,
+            status: resp.status,
+            statusText: resp.statusText,
+            url: resp.finalUrl || url,
             headers: new Headers(responseHeaders),
-            text: () => Promise.resolve(response.responseText),
+            text: () => Promise.resolve(resp.responseText),
+            // P1: Handle JSON parsing error as a rejected promise
             json: () => {
               try {
-                return Promise.resolve(JSON.parse(response.responseText));
+                return Promise.resolve(JSON.parse(resp.responseText));
               } catch (e) {
-                return Promise.reject(new SyntaxError("Could not parse JSON"));
+                return Promise.reject(e);
               }
             },
-            blob: () => {
-              if (response.response instanceof Blob) {
-                return Promise.resolve(response.response);
-              }
-              return Promise.reject(
-                new Error("Requires responseType:'blob' in GM_xmlhttpRequest")
-              );
-            },
-            arrayBuffer: () => {
-              if (response.response instanceof ArrayBuffer) {
-                return Promise.resolve(response.response);
-              }
-              return Promise.reject(
-                new Error(
-                  "Requires responseType:'arraybuffer' in GM_xmlhttpRequest"
-                )
-              );
-            },
-            clone: function () {
-              const cloned = { ...this };
-              cloned.text = () => Promise.resolve(response.responseText);
-              cloned.json = () => this.json();
-              cloned.blob = () => this.blob();
-              cloned.arrayBuffer = () => this.arrayBuffer();
-              return cloned;
-            },
+            blob: () => Promise.resolve(resp.response),
+            arrayBuffer: () => Promise.resolve(resp.response)
           };
-
-          if (mockResponse.ok) {
-            resolve(mockResponse);
-          } else {
-            const error = new Error(`HTTP error! status: ${response.status}`);
-            error.response = mockResponse;
-            reject(error);
-          }
+          resolve(mock);
         },
-        onerror: function (response) {
-          reject(
-            new Error(
-              `GM_xmlhttpRequest network error: ${
-                response.statusText || "Unknown Error"
-              }`
-            )
-          );
-        },
-        onabort: function () {
-          reject(new Error("GM_xmlhttpRequest aborted"));
-        },
-        ontimeout: function () {
-          reject(new Error("GM_xmlhttpRequest timed out"));
-        },
+        onerror: (e) => reject(new Error("Network Error")),
+        onabort: () => reject(new Error("Aborted")),
+        ontimeout: () => reject(new Error("Timeout"))
       });
-    } catch (e) {
-      _error("_fetch (GM_xmlhttpRequest) error:", e);
-      reject(e);
-    }
+    } catch (e) { reject(e); }
   });
 }
 
-function _registerMenuCommand(name, func) {
-  if (typeof GM_registerMenuCommand === "function") {
-    try {
-      GM_registerMenuCommand(name, func);
-    } catch (e) {
-      _error("GM_registerMenuCommand failed:", e);
-    }
-  } else {
-    _warn("GM_registerMenuCommand not available.");
-  }
-}
-
-function _openTab(url, active) {
-  if (typeof GM_openInTab === "function") {
-    try {
-      GM_openInTab(url, { loadInBackground: !active });
-    } catch (e) {
-      _error("GM_openInTab failed:", e);
-    }
-  } else {
-    _warn("GM_openInTab not available, using window.open as fallback.");
-    try {
-      window.open(url);
-    } catch (e) {
-      _error("window.open fallback failed:", e);
-    }
-  }
-}
-
-async function _initStorage() {
-  return Promise.resolve();
-}
+function _registerMenuCommand(n, f) { if (typeof GM_registerMenuCommand === 'function') GM_registerMenuCommand(n, f); }
+function _openTab(u, a) { if (typeof GM_openInTab === 'function') GM_openInTab(u, { loadInBackground: !a }); else window.open(u, '_blank'); }
+async function _initStorage() { return Promise.resolve(); }
