@@ -48,8 +48,7 @@ ${abstraction}
 ${polyfillTemplate
   .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
   .replace('{{SCRIPT_ID}}', internalId)
-  .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
-  .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest))}
+  .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')}
 `;
 
     return combined;
