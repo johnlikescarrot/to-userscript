@@ -4,9 +4,22 @@ import { LoadManifestStep } from './steps/LoadManifestStep.js';
 import { ProcessResourcesStep } from './steps/ProcessResourcesStep.js';
 import { GenerateAssetsStep } from './steps/GenerateAssetsStep.js';
 import { AssembleStep } from './steps/AssembleStep.js';
+import { UnpackService } from './services/UnpackService.js';
+import { NormalizedManifest } from './schemas/ManifestSchema.js';
+import fs from 'fs-extra';
+import { ResourceResult } from './core/types.js';
 
 export async function convertExtension(config: ConversionConfig) {
-  const context = new ConversionContext(config);
+  let inputDir = config.inputDir;
+
+  if (await fs.pathExists(inputDir)) {
+    const stats = await fs.stat(inputDir);
+    if (stats.isFile()) {
+      inputDir = await UnpackService.unpack(inputDir);
+    }
+  }
+
+  const context = new ConversionContext({ ...config, inputDir });
   const engine = new MigrationEngine(context);
 
   engine
@@ -16,7 +29,26 @@ export async function convertExtension(config: ConversionConfig) {
     .addStep(new AssembleStep());
 
   await engine.run();
+
+  const manifest = context.get<NormalizedManifest>('manifest');
+  const resources = context.get<ResourceResult>('resources');
+
+  return {
+    success: true,
+    outputFile: config.outputFile,
+    extension: {
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description
+    },
+    stats: {
+        jsFiles: Object.keys(resources.jsContents).length,
+        cssFiles: Object.keys(resources.cssContents).length,
+        assets: Object.keys(context.get('assetMap')).length
+    }
+  };
 }
 
 export * from './core/types.js';
 export * from './schemas/ManifestSchema.js';
+export * from './core/ConversionContext.js';

@@ -27,11 +27,17 @@ export class AssetService {
     const processedFiles = new Set<string>();
 
     const processFile = async (relPath: string) => {
-      const normalized = normalizePath(relPath);
+      // P2: Strip query/hash fragments
+      const cleanRelPath = relPath.split(/[?#]/)[0];
+      const normalized = normalizePath(cleanRelPath);
+
       if (processedFiles.has(normalized)) return;
 
       const fullPath = path.join(extensionRoot, normalized);
       if (!(await fs.pathExists(fullPath))) return;
+
+      // P2: Mark as processed BEFORE recursing to prevent infinite loops
+      processedFiles.add(normalized);
 
       const ext = path.extname(normalized).toLowerCase();
       const isText = ['.html', '.htm', '.css', '.js', '.json', '.svg'].includes(ext);
@@ -40,11 +46,14 @@ export class AssetService {
         let textContent = await fs.readFile(fullPath, 'utf-8');
         if (['.html', '.htm', '.css'].includes(ext)) {
           const type = ext === '.css' ? 'CSS' : 'HTML';
-          const patterns = type === 'CSS' ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
+          const pattern = type === 'CSS' ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
+
+          // P2: Reset global regex lastIndex
+          pattern.lastIndex = 0;
 
           let match;
           const foundAssets: string[] = [];
-          while ((match = patterns.exec(textContent)) !== null) {
+          while ((match = pattern.exec(textContent)) !== null) {
             const url = type === 'HTML' ? (match[2] || match[3]) : match[1];
             if (url && !this.REGEX_PATTERNS.EXTERNAL_URLS.test(url)) {
               foundAssets.push(url);
@@ -61,24 +70,24 @@ export class AssetService {
         const buffer = await fs.readFile(fullPath);
         assetMap[normalized] = buffer.toString('base64');
       }
-      processedFiles.add(normalized);
     };
 
-    const pages = new Set<string>();
+    // Initial discovery from manifest
+    const initialFiles = new Set<string>();
     if (manifest.manifest_version === 2) {
-      if (manifest.options_ui?.page) pages.add(manifest.options_ui.page);
-      if (manifest.options_page) pages.add(manifest.options_page);
-      if (manifest.browser_action?.default_popup) pages.add(manifest.browser_action.default_popup);
+      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
+      if (manifest.options_page) initialFiles.add(manifest.options_page);
+      if (manifest.browser_action?.default_popup) initialFiles.add(manifest.browser_action.default_popup);
     } else {
-      if (manifest.options_ui?.page) pages.add(manifest.options_ui.page);
-      if (manifest.action?.default_popup) pages.add(manifest.action.default_popup);
+      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
+      if (manifest.action?.default_popup) initialFiles.add(manifest.action.default_popup);
     }
 
-    for (const page of pages) await processFile(page);
+    for (const f of initialFiles) await processFile(f);
     if (manifest.web_accessible_resources) {
       for (const res of manifest.web_accessible_resources) {
         if (typeof res === 'string') await processFile(res);
-        else for (const resourcePath of res.resources) await processFile(resourcePath);
+        else for (const rp of res.resources) await processFile(rp);
       }
     }
 

@@ -1,10 +1,10 @@
-import { ConversionContext } from './ConversionContext';
+import { ConversionContext } from './ConversionContext.js';
 
 export abstract class Step {
   abstract readonly name: string;
   abstract run(context: ConversionContext): Promise<void>;
 
-  protected async execute(context: ConversionContext): Promise<void> {
+  public async execute(context: ConversionContext): Promise<void> {
     context.logger.startSpinner(`Step: ${this.name}...`);
     try {
       await this.run(context);

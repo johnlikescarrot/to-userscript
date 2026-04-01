@@ -1,5 +1,5 @@
-import { ConversionContext } from './ConversionContext';
-import { Step } from './Step';
+import { ConversionContext } from './ConversionContext.js';
+import { Step } from './Step.js';
 
 export class MigrationEngine {
   private steps: Step[] = [];
@@ -14,7 +14,6 @@ export class MigrationEngine {
   async run(): Promise<void> {
     this.context.logger.info('Starting conversion engine...');
     for (const step of this.steps) {
-      // @ts-ignore - accessing protected execute
       await step.execute(this.context);
     }
     this.context.logger.success('All conversion steps completed successfully.');

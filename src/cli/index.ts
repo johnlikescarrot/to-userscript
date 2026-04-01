@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import chalk from 'chalk';
 import { convertExtension } from '../index.js';
+import { DownloadService } from '../services/DownloadService.js';
 
 const parser = yargs(hideBin(process.argv))
   .scriptName('to-userscript')
@@ -16,7 +17,7 @@ const parser = yargs(hideBin(process.argv))
     (yargs) => {
       return yargs
         .positional('source', {
-          describe: 'Extension source directory',
+          describe: 'Extension source (dir, archive, or URL)',
           type: 'string',
           demandOption: true,
         })
@@ -31,44 +32,55 @@ const parser = yargs(hideBin(process.argv))
           choices: ['userscript', 'vanilla'] as const,
           default: 'userscript' as const,
         })
-        .option('force', {
-          alias: 'f',
-          describe: 'Overwrite output file if it exists',
-          type: 'boolean',
-          default: false,
-        });
+        .option('minify', { type: 'boolean', default: false })
+        .option('beautify', { type: 'boolean', default: false })
+        .option('force', { alias: 'f', type: 'boolean', default: false });
     },
     async (argv) => {
-      const inputDir = path.resolve(argv.source as string);
-      const outputFile = argv.output
-        ? path.resolve(argv.output as string)
-        : path.resolve(process.cwd(), 'extension.user.js');
-
-      if (!(await fs.pathExists(inputDir))) {
-        console.error(chalk.red(`Error: Source directory "${inputDir}" does not exist.`));
-        process.exit(1);
+      let source = argv.source as string;
+      if (source.startsWith('http')) {
+        console.log(chalk.blue('Downloading extension...'));
+        const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
+        source = await DownloadService.download(url, path.join(process.cwd(), 'temp.zip'));
       }
 
       try {
         await convertExtension({
-          inputDir,
-          outputFile,
+          inputDir: path.resolve(source),
+          outputFile: path.resolve(argv.output as string || 'extension.user.js'),
           target: argv.target,
+          minify: argv.minify,
+          beautify: argv.beautify,
           force: argv.force,
         });
         console.log(chalk.green.bold('\n✨ Conversion successful!'));
-        console.log(chalk.blue('📄 Output:'), outputFile);
       } catch (error) {
         console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
         process.exit(1);
       }
     }
   )
-  .help()
-  .alias('help', 'h')
-  .version()
-  .alias('version', 'V')
-  .demandCommand(1, 'You must specify a command')
-  .strict();
-
-parser.parse();
+  .command(
+    'download <source>',
+    'Download an extension archive',
+    (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
+    async (argv) => {
+      const url = DownloadService.getCrxUrl(argv.source as string);
+      const dest = path.resolve(process.cwd(), 'extension.zip');
+      await DownloadService.download(url, dest);
+      console.log(chalk.green('Downloaded to:'), dest);
+    }
+  )
+  .command(
+    'require <userscript>',
+    'Generate a metadata block with @require',
+    (yargs) => yargs.positional('userscript', { type: 'string', demandOption: true }),
+    async (argv) => {
+      const filePath = path.resolve(argv.userscript as string);
+      console.log('// ==UserScript==');
+      console.log('// @name        Requirement');
+      console.log(`// @require     file://${filePath}`);
+      console.log('// ==/UserScript==');
+    }
+  )
+  .help().alias('h', 'help').parse();

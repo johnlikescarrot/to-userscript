@@ -2,3 +2,4 @@ extensions
 node_modules
 .DS_Store
 *.user.js
+dist

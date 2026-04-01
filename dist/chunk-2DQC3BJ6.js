@@ -167,14 +167,40 @@ var ManifestService = class {
     const content = await fs.readFile(manifestPath, "utf-8");
     const raw = JSON.parse(content);
     const parsed = ManifestSchema.parse(raw);
-    if (parsed.content_scripts) {
-      parsed.content_scripts = parsed.content_scripts.filter((cs) => cs.matches && (cs.js || cs.css)).map((cs) => ({
+    const normalized = {
+      manifest_version: parsed.manifest_version,
+      name: parsed.name,
+      version: parsed.version,
+      description: parsed.description || "",
+      icons: parsed.icons || {},
+      content_scripts: (parsed.content_scripts || []).filter((cs) => cs.matches && cs.matches.length > 0 && (cs.js?.length || cs.css?.length)).map((cs) => ({
         ...cs,
         js: cs.js?.map(normalizePath),
         css: cs.css?.map(normalizePath)
-      }));
+      })),
+      action: {},
+      background_scripts: [],
+      web_accessible_resources: [],
+      raw: parsed
+    };
+    if (parsed.manifest_version === 2) {
+      normalized.action = {
+        default_popup: parsed.browser_action?.default_popup || parsed.page_action?.default_popup,
+        default_icon: parsed.browser_action?.default_icon
+      };
+      normalized.background_scripts = parsed.background?.scripts || [];
+      normalized.options_page = parsed.options_ui?.page || parsed.options_page;
+      normalized.web_accessible_resources = parsed.web_accessible_resources || [];
+    } else {
+      normalized.action = {
+        default_popup: parsed.action?.default_popup,
+        default_icon: parsed.action?.default_icon
+      };
+      normalized.background_scripts = parsed.background?.service_worker ? [parsed.background.service_worker] : [];
+      normalized.options_page = parsed.options_ui?.page;
+      normalized.web_accessible_resources = (parsed.web_accessible_resources || []).flatMap((r) => r.resources);
     }
-    return parsed;
+    return normalized;
   }
   static getInternalId(manifest) {
     return manifest.name.replace(/[^a-z0-9]+/gi, "-").replace(/-+$/, "").replace(/^-+/, "").toLowerCase();
@@ -244,11 +270,13 @@ var ProcessResourcesStep = class extends Step {
     const { inputDir } = context.config;
     const resources = await ResourceService.readScriptsAndStyles(
       inputDir,
-      manifest.content_scripts || []
+      manifest.content_scripts
     );
     context.set("resources", resources);
-    const backgroundScripts = manifest.background?.service_worker ? [manifest.background.service_worker] : manifest.background?.scripts || [];
-    const backgroundJs = await ResourceService.readBackgroundScripts(inputDir, backgroundScripts);
+    const backgroundJs = await ResourceService.readBackgroundScripts(
+      inputDir,
+      manifest.background_scripts
+    );
     context.set("backgroundJs", backgroundJs);
   }
 };
@@ -283,20 +311,23 @@ var AssetService = class {
     const assetMap = {};
     const processedFiles = /* @__PURE__ */ new Set();
     const processFile = async (relPath) => {
-      const normalized = normalizePath(relPath);
+      const cleanRelPath = relPath.split(/[?#]/)[0];
+      const normalized = normalizePath(cleanRelPath);
       if (processedFiles.has(normalized)) return;
       const fullPath = path3.join(extensionRoot, normalized);
       if (!await fs3.pathExists(fullPath)) return;
+      processedFiles.add(normalized);
       const ext = path3.extname(normalized).toLowerCase();
       const isText = [".html", ".htm", ".css", ".js", ".json", ".svg"].includes(ext);
       if (isText) {
         let textContent = await fs3.readFile(fullPath, "utf-8");
         if ([".html", ".htm", ".css"].includes(ext)) {
           const type = ext === ".css" ? "CSS" : "HTML";
-          const patterns = type === "CSS" ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
+          const pattern = type === "CSS" ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
+          pattern.lastIndex = 0;
           let match;
           const foundAssets = [];
-          while ((match = patterns.exec(textContent)) !== null) {
+          while ((match = pattern.exec(textContent)) !== null) {
             const url = type === "HTML" ? match[2] || match[3] : match[1];
             if (url && !this.REGEX_PATTERNS.EXTERNAL_URLS.test(url)) {
               foundAssets.push(url);
@@ -312,22 +343,21 @@ var AssetService = class {
         const buffer = await fs3.readFile(fullPath);
         assetMap[normalized] = buffer.toString("base64");
       }
-      processedFiles.add(normalized);
     };
-    const pages = /* @__PURE__ */ new Set();
+    const initialFiles = /* @__PURE__ */ new Set();
     if (manifest.manifest_version === 2) {
-      if (manifest.options_ui?.page) pages.add(manifest.options_ui.page);
-      if (manifest.options_page) pages.add(manifest.options_page);
-      if (manifest.browser_action?.default_popup) pages.add(manifest.browser_action.default_popup);
+      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
+      if (manifest.options_page) initialFiles.add(manifest.options_page);
+      if (manifest.browser_action?.default_popup) initialFiles.add(manifest.browser_action.default_popup);
     } else {
-      if (manifest.options_ui?.page) pages.add(manifest.options_ui.page);
-      if (manifest.action?.default_popup) pages.add(manifest.action.default_popup);
+      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
+      if (manifest.action?.default_popup) initialFiles.add(manifest.action.default_popup);
     }
-    for (const page of pages) await processFile(page);
+    for (const f of initialFiles) await processFile(f);
     if (manifest.web_accessible_resources) {
       for (const res of manifest.web_accessible_resources) {
         if (typeof res === "string") await processFile(res);
-        else for (const resourcePath of res.resources) await processFile(resourcePath);
+        else for (const rp of res.resources) await processFile(rp);
       }
     }
     return assetMap;
@@ -383,20 +413,35 @@ var PolyfillService = class {
   static async build(target, assetMap, manifest) {
     const messaging = await TemplateService.load("messaging");
     const abstraction = await TemplateService.load(`abstractionLayer.${target === "userscript" ? "userscript" : target === "vanilla" ? "vanilla" : "postmessage"}`);
-    const polyfill = await TemplateService.load("polyfill");
+    const polyfillTemplate = await TemplateService.load("polyfill");
     const internalId = ManifestService.getInternalId(manifest);
-    let combined = `
-${messaging}
+    const decodingHelper = `
+function _base64ToUint8Array(base64) {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+`;
+    const getURLImpl = `
+      getURL: (path) => {
+        if (!path) return "";
+        let cleanPath = path.startsWith("/") ? path.substring(1) : path;
+        const data = EXTENSION_ASSETS_MAP[cleanPath];
+        if (!data) return path;
 
+        const isText = ["html", "htm", "js", "css", "json", "svg"].some(ext => cleanPath.endsWith(ext));
+        const blob = isText ? new Blob([data], { type: "text/plain" }) : new Blob([_base64ToUint8Array(data)]);
+        return URL.createObjectURL(blob);
+      }
+    `;
+    let combined = `
+${decodingHelper}
+${messaging}
 ${abstraction}
 
-const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap, null, 2)};
-
-${polyfill.replace("{{IS_IFRAME}}", target === "postmessage" ? "true" : "false").replace("{{SCRIPT_ID}}", internalId)}
-
-if (typeof window !== 'undefined') {
-    (window as any).buildPolyfill = (buildPolyfill as any);
-}
+${polyfillTemplate.replace("{{IS_IFRAME}}", target === "postmessage" ? "true" : "false").replace("{{SCRIPT_ID}}", internalId).replace(/getURL: \(path\) => .*,/, getURLImpl + ",").replace("{{INJECTED_MANIFEST}}", JSON.stringify(manifest))}
 `;
     return combined;
   }
@@ -404,6 +449,57 @@ if (typeof window !== 'undefined') {
 
 // src/steps/AssembleStep.ts
 import fs5 from "fs-extra";
+
+// src/utils/RegexUtils.ts
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function convertMatchPatternToRegExpString(pattern) {
+  if (typeof pattern !== "string" || !pattern) {
+    return "$.";
+  }
+  const schemeMatch = pattern.match(/^(\*|https?|file|ftp):\/\//);
+  if (!schemeMatch) return "$.";
+  const scheme = schemeMatch[1];
+  const remaining = pattern.substring(schemeMatch[0].length);
+  const schemeRegex = scheme === "*" ? "https?|file|ftp" : scheme;
+  const hostMatch = remaining.match(/^([^\/]+)/);
+  if (!hostMatch) return "$.";
+  const host = hostMatch[1];
+  const pathPart = remaining.substring(host.length);
+  let hostRegex;
+  if (host === "*") {
+    hostRegex = "[^/]+";
+  } else if (host.startsWith("*.")) {
+    hostRegex = "(?:[^\\/]+\\.)?" + escapeRegex(host.substring(2));
+  } else {
+    hostRegex = escapeRegex(host);
+  }
+  let pathRegex = pathPart;
+  if (!pathRegex.startsWith("/")) {
+    pathRegex = "/" + pathRegex;
+  }
+  pathRegex = pathRegex.split("*").map(escapeRegex).join(".*");
+  if (pathRegex === "/.*") {
+    pathRegex = "(?:/.*)?";
+  } else {
+    pathRegex = pathRegex + "(?:[?#]|$)";
+  }
+  return `^${schemeRegex}:\\/\\/${hostRegex}${pathRegex}`;
+}
+function convertMatchPatternToRegExp(pattern) {
+  if (pattern === "<all_urls>") {
+    return new RegExp(".*");
+  }
+  try {
+    const singleEscapedPattern = convertMatchPatternToRegExpString(pattern).replace(/\\\\/g, "\\");
+    return new RegExp(singleEscapedPattern);
+  } catch {
+    return new RegExp("$.");
+  }
+}
+
+// src/steps/AssembleStep.ts
 var AssembleStep = class extends Step {
   name = "Assemble Final Script";
   async run(context) {
@@ -411,7 +507,7 @@ var AssembleStep = class extends Step {
     const assetMap = context.get("assetMap");
     const resources = context.get("resources");
     const { target, outputFile } = context.config;
-    const mainPolyfill = await PolyfillService.build(target, assetMap, manifest);
+    const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
     const orchestrationTemplate = await TemplateService.load("orchestration");
     const runAtMap = {
       "document-start": [],
@@ -425,57 +521,59 @@ var AssembleStep = class extends Step {
           for (const js of cs.js) {
             const normalized = normalizePath(js);
             if (resources.jsContents[normalized]) {
-              runAtMap[runAt].push(resources.jsContents[normalized]);
+              runAtMap[runAt].push(`// --- ${normalized}
+${resources.jsContents[normalized]}`);
             }
           }
         }
       }
     }
-    const generatePhase = (phase) => `
-      _log('Executing ${phase} phase...');
-      ${runAtMap[phase].join("\n\n")}
-    `;
     const combinedExecutionLogic = `
 async function executeAllScripts(globalThis, extensionCssData) {
     const {chrome, browser, window, self} = globalThis;
 
-    // --- Document Start
-    ${generatePhase("document-start")}
+    // Inject CSS
+    for (const [path, css] of Object.entries(extensionCssData)) {
+        const style = document.createElement('style');
+        style.textContent = css;
+        style.setAttribute('data-extension-path', path);
+        (document.head || document.documentElement).appendChild(style);
+    }
 
-    // --- Wait for DOMContentLoaded
+    // --- Document Start
+    ${runAtMap["document-start"].join("\n\n")}
+
+    // --- Wait for Document End
     if (document.readyState === 'loading') {
         await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
     }
 
     // --- Document End
-    ${generatePhase("document-end")}
+    ${runAtMap["document-end"].join("\n\n")}
 
-    // --- Document Idle
+    // --- Wait for Document Idle
     if (typeof window.requestIdleCallback === 'function') {
         await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
     } else {
         await new Promise(resolve => setTimeout(resolve, 50));
     }
-    ${generatePhase("document-idle")}
 
-    _log('All phases complete.');
+    // --- Document Idle
+    ${runAtMap["document-idle"].join("\n\n")}
+
+    _log('Phased execution complete.');
 }
 `;
     const finalScript = TemplateService.replace(orchestrationTemplate, {
-      "{{INJECTED_MANIFEST}}": JSON.stringify(manifest),
+      "{{INJECTED_MANIFEST}}": JSON.stringify(manifest.raw),
       "{{EXTENSION_CSS_DATA}}": JSON.stringify(resources.cssContents),
       "{{COMBINED_EXECUTION_LOGIC}}": combinedExecutionLogic,
-      "{{UNIFIED_POLYFILL_FOR_IFRAME}}": JSON.stringify(mainPolyfill),
-      // Simplified for now
-      "{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}": JSON.stringify(manifest.content_scripts || []),
-      "{{OPTIONS_PAGE_PATH}}": JSON.stringify(manifest.options_page || manifest.options_ui?.page || null),
-      "{{POPUP_PAGE_PATH}}": JSON.stringify(manifest.action?.default_popup || manifest.browser_action?.default_popup || null),
+      "{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}": JSON.stringify(manifest.content_scripts),
+      "{{OPTIONS_PAGE_PATH}}": JSON.stringify(manifest.options_page || null),
+      "{{POPUP_PAGE_PATH}}": JSON.stringify(manifest.action.default_popup || null),
       "{{EXTENSION_ICON}}": "null",
-      "{{CONVERT_MATCH_PATTERN_TO_REGEXP_FUNCTION}}": "() => { return { test: () => true } }",
-      // Mocked for brevity
-      "{{CONVERT_MATCH_PATTERN_FUNCTION_STRING}}": '""',
       "{{LOCALE}}": "{}",
-      "{{USED_LOCALE}}": '"en"'
+      "{{USED_LOCALE}}": JSON.stringify(context.config.locale || "en")
     });
     const wrapper = `
 (function() {
@@ -485,26 +583,93 @@ async function executeAllScripts(globalThis, extensionCssData) {
     const _warn = (...args) => console.warn(\`[\${SCRIPT_NAME}]\`, ...args);
     const _error = (...args) => console.error(\`[\${SCRIPT_NAME}]\`, ...args);
 
+    // --- Utils
+    const escapeRegex = ${escapeRegex.toString()};
+    const convertMatchPatternToRegExpString = ${convertMatchPatternToRegExpString.toString()};
+    const convertMatchPatternToRegExp = ${convertMatchPatternToRegExp.toString()};
+
+    // --- Assets Map
+    const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap)};
+
+    // --- Polyfill & Logic
     ${mainPolyfill}
 
     ${finalScript}
 
-    main().catch(e => _error('Init error', e));
+    main().catch(e => _error('Initialization error', e));
 })();
 `;
     await fs5.outputFile(outputFile, wrapper);
   }
 };
 
+// src/services/UnpackService.ts
+import fs6 from "fs-extra";
+import path5 from "path";
+import yauzl from "yauzl";
+import tmp from "tmp";
+var UnpackService = class {
+  static async unpack(archivePath) {
+    const tmpDir = tmp.dirSync({ unsafeCleanup: true }).name;
+    return new Promise((resolve, reject) => {
+      yauzl.open(archivePath, { lazyEntries: true }, (err, zipfile) => {
+        if (err) return reject(err);
+        zipfile.readEntry();
+        zipfile.on("entry", (entry) => {
+          const dest = path5.join(tmpDir, entry.fileName);
+          if (/\/$/.test(entry.fileName)) {
+            fs6.mkdirpSync(dest);
+            zipfile.readEntry();
+          } else {
+            fs6.mkdirpSync(path5.dirname(dest));
+            zipfile.openReadStream(entry, (err2, readStream) => {
+              if (err2) return reject(err2);
+              const writeStream = fs6.createWriteStream(dest);
+              readStream.pipe(writeStream);
+              writeStream.on("close", () => zipfile.readEntry());
+            });
+          }
+        });
+        zipfile.on("close", () => resolve(tmpDir));
+      });
+    });
+  }
+};
+
 // src/index.ts
+import fs7 from "fs-extra";
 async function convertExtension(config) {
-  const context = new ConversionContext(config);
+  let inputDir = config.inputDir;
+  if (await fs7.pathExists(inputDir)) {
+    const stats = await fs7.stat(inputDir);
+    if (stats.isFile()) {
+      inputDir = await UnpackService.unpack(inputDir);
+    }
+  }
+  const context = new ConversionContext({ ...config, inputDir });
   const engine = new MigrationEngine(context);
   engine.addStep(new LoadManifestStep()).addStep(new ProcessResourcesStep()).addStep(new GenerateAssetsStep()).addStep(new AssembleStep());
   await engine.run();
+  const manifest = context.get("manifest");
+  const resources = context.get("resources");
+  return {
+    success: true,
+    outputFile: config.outputFile,
+    extension: {
+      name: manifest.name,
+      version: manifest.version,
+      description: manifest.description
+    },
+    stats: {
+      jsFiles: Object.keys(resources.jsContents).length,
+      cssFiles: Object.keys(resources.cssContents).length,
+      assets: Object.keys(context.get("assetMap")).length
+    }
+  };
 }
 
 export {
+  ConversionContext,
   ContentScriptSchema,
   ManifestV2Schema,
   ManifestV3Schema,

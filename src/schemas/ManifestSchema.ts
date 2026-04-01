@@ -68,6 +68,23 @@ export const ManifestV3Schema = z.object({
 
 export const ManifestSchema = z.union([ManifestV2Schema, ManifestV3Schema]);
 
+export interface NormalizedManifest {
+  manifest_version: 2 | 3;
+  name: string;
+  version: string;
+  description: string;
+  icons: Record<string, string>;
+  content_scripts: z.infer<typeof ContentScriptSchema>[];
+  action: {
+    default_popup?: string;
+    default_icon?: string | Record<string, string>;
+  };
+  options_page?: string;
+  background_scripts: string[];
+  web_accessible_resources: string[];
+  raw: any;
+}
+
 export type ContentScript = z.infer<typeof ContentScriptSchema>;
 export type ManifestV2 = z.infer<typeof ManifestV2Schema>;
 export type ManifestV3 = z.infer<typeof ManifestV3Schema>;

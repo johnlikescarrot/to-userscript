@@ -1,5 +1,17 @@
 import { z } from 'zod';
 
+declare class Logger {
+    private context;
+    private spinner;
+    constructor(context: string);
+    info(message: string): void;
+    success(message: string): void;
+    warn(message: string): void;
+    error(message: string, error?: unknown): void;
+    startSpinner(message: string): void;
+    stopSpinner(success?: boolean, message?: string): void;
+}
+
 interface ConversionConfig {
     inputDir: string;
     outputFile: string;
@@ -9,6 +21,14 @@ interface ConversionConfig {
     minify?: boolean;
     beautify?: boolean;
     force?: boolean;
+}
+declare class ConversionContext {
+    readonly config: ConversionConfig;
+    readonly logger: Logger;
+    state: Record<string, any>;
+    constructor(config: ConversionConfig);
+    set<T>(key: string, value: T): void;
+    get<T>(key: string): T;
 }
 
 interface AssetMap {
@@ -596,11 +616,40 @@ declare const ManifestSchema: z.ZodUnion<[z.ZodObject<{
         default_icon?: string | Record<string, string> | undefined;
     } | undefined;
 }>]>;
+interface NormalizedManifest {
+    manifest_version: 2 | 3;
+    name: string;
+    version: string;
+    description: string;
+    icons: Record<string, string>;
+    content_scripts: z.infer<typeof ContentScriptSchema>[];
+    action: {
+        default_popup?: string;
+        default_icon?: string | Record<string, string>;
+    };
+    options_page?: string;
+    background_scripts: string[];
+    web_accessible_resources: string[];
+    raw: any;
+}
 type ContentScript = z.infer<typeof ContentScriptSchema>;
 type ManifestV2 = z.infer<typeof ManifestV2Schema>;
 type ManifestV3 = z.infer<typeof ManifestV3Schema>;
 type Manifest = z.infer<typeof ManifestSchema>;
 
-declare function convertExtension(config: ConversionConfig): Promise<void>;
+declare function convertExtension(config: ConversionConfig): Promise<{
+    success: boolean;
+    outputFile: string;
+    extension: {
+        name: string;
+        version: string;
+        description: string;
+    };
+    stats: {
+        jsFiles: number;
+        cssFiles: number;
+        assets: number;
+    };
+}>;
 
-export { type AssetMap, type ContentScript, ContentScriptSchema, type ConversionResult, type Manifest, ManifestSchema, type ManifestV2, ManifestV2Schema, type ManifestV3, ManifestV3Schema, type ResourceResult, type ScriptContents, convertExtension };
+export { type AssetMap, type ContentScript, ContentScriptSchema, type ConversionConfig, ConversionContext, type ConversionResult, type Manifest, ManifestSchema, type ManifestV2, ManifestV2Schema, type ManifestV3, ManifestV3Schema, type NormalizedManifest, type ResourceResult, type ScriptContents, convertExtension };
