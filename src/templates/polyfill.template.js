@@ -4,8 +4,13 @@ function buildPolyfill({ isBackground = false } = {}) {
 
   const storageChangeListeners = new Set();
   function broadcastStorageChange(changes, areaName) {
+    // P2: Build proper change records { newValue }
+    const changeRecords = {};
+    for (const [key, newValue] of Object.entries(changes)) {
+        changeRecords[key] = { newValue };
+    }
     storageChangeListeners.forEach((listener) => {
-      try { listener(changes, areaName); } catch(e) {}
+      try { listener(changeRecords, areaName); } catch(e) {}
     });
   }
 
@@ -41,7 +46,6 @@ function buildPolyfill({ isBackground = false } = {}) {
         set: (i, cb) => { const p = _storageSet(i).then(() => broadcastStorageChange(i, "sync")); if (cb) p.then(cb); return p; }
       },
       onChanged: {
-        // P1: Attached to storage as per spec
         addListener: (l) => storageChangeListeners.add(l),
         removeListener: (l) => storageChangeListeners.delete(l)
       }
@@ -51,12 +55,17 @@ function buildPolyfill({ isBackground = false } = {}) {
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
       sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
     },
+    cookies: {
+      get: (d) => _cookieList(d).then(c => c[0] || null),
+      getAll: (d) => _cookieList(d),
+      set: (d) => _cookieSet(d),
+      remove: (d) => _cookieDelete(d)
+    },
     notifications: {
       create: (arg1, arg2, cb) => {
         const id = typeof arg1 === 'string' ? arg1 : Math.random().toString();
         const opts = typeof arg1 === 'object' ? arg1 : arg2;
         const callback = typeof arg2 === 'function' ? arg2 : cb;
-        // Basic web notification fallback
         if (Notification.permission === "granted") new Notification(opts.title, { body: opts.message });
         if (callback) callback(id);
         return Promise.resolve(id);

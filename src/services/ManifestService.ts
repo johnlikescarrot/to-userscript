@@ -29,6 +29,7 @@ export class ManifestService {
 
     if (parsed.manifest_version === 2) {
       normalized.action = {
+        // P1: Consistently map MV2 popup sources
         default_popup: parsed.browser_action?.default_popup || parsed.page_action?.default_popup,
         default_icon: parsed.browser_action?.default_icon,
       };

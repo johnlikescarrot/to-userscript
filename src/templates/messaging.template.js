@@ -41,7 +41,6 @@ function createRuntime(type, bus) {
   const pending = {};
   const listeners = [];
 
-  // P1: background-only request handler
   if (type === "background") {
     bus.on("__REQUEST__", ({ id, message }, { source }) => {
       let responded = false, isAsync = false;
@@ -50,15 +49,29 @@ function createRuntime(type, bus) {
         responded = true;
         bus.emit("__RESPONSE__", { id, response: resp }, { to: source });
       }
+
+      // P1: Wrapped in try-catch and added async Promise detection
       listeners.forEach(fn => {
-        const ret = fn(message, { tab: { id: source } }, sendResponse);
-        if (ret === true) isAsync = true;
+        try {
+          const ret = fn(message, { tab: { id: source } }, sendResponse);
+          if (ret === true || (ret && typeof ret.then === "function")) {
+            isAsync = true;
+            if (ret && typeof ret.then === "function") {
+              ret.then(sendResponse).catch(err => {
+                  _error("Async message listener error:", err);
+                  sendResponse(undefined);
+              });
+            }
+          }
+        } catch(e) {
+          _error("Message listener error:", e);
+        }
       });
+
       if (!isAsync && !responded) sendResponse(undefined);
     });
   }
 
-  // P1: Non-background response listener
   if (type !== "background") {
     bus.on("__RESPONSE__", ({ id, response }) => {
       const entry = pending[id];
@@ -72,9 +85,8 @@ function createRuntime(type, bus) {
 
   function sendMessage(...args) {
     const message = args[0];
-    const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+    const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
     const id = nextId++;
-    // P0: Always return a promise
     return new Promise((resolve) => {
       pending[id] = { resolve, callback };
       bus.emit("__REQUEST__", { id, message });
@@ -91,7 +103,6 @@ function createRuntime(type, bus) {
       }
     },
     connect(info = {}) {
-      // Stub for high-fidelity port connections (Future enhancement)
       return {
         name: info.name, onMessage: { addListener: () => {} },
         onDisconnect: { addListener: () => {} }, postMessage: () => {}, disconnect: () => {}

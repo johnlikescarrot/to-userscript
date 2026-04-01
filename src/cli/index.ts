@@ -30,11 +30,13 @@ const parser = yargs(hideBin(process.argv))
     },
     async (argv) => {
       let source = argv.source as string;
+      let tempDownloadPath: string | null = null;
+
       if (source.startsWith('http')) {
         console.log(chalk.blue('Downloading extension...'));
         const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
-        const tempPath = path.resolve(process.cwd(), `temp-${Date.now()}.zip`);
-        source = await DownloadService.download(url, tempPath);
+        tempDownloadPath = path.resolve(process.cwd(), `temp-download-${Date.now()}.zip`);
+        source = await DownloadService.download(url, tempDownloadPath);
       }
 
       try {
@@ -51,7 +53,10 @@ const parser = yargs(hideBin(process.argv))
         console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
         process.exit(1);
       } finally {
-        if (source.includes('temp-')) await fs.remove(source).catch(() => {});
+        // P1: Only cleanup the explicitly tracked temporary download file
+        if (tempDownloadPath) {
+          await fs.remove(tempDownloadPath).catch(() => {});
+        }
       }
     }
   )
@@ -73,7 +78,6 @@ const parser = yargs(hideBin(process.argv))
     (yargs) => yargs.positional('userscript', { type: 'string', demandOption: true }),
     async (argv) => {
       const filePath = path.resolve(argv.userscript as string);
-      // P2: Use pathToFileURL for Windows compatibility
       const fileUrl = pathToFileURL(filePath).href;
       console.log('// ==UserScript==');
       console.log('// @name        Requirement');

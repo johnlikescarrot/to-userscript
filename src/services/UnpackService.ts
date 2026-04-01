@@ -14,9 +14,11 @@ export class UnpackService {
 
         zipfile.readEntry();
         zipfile.on('entry', (entry) => {
-          // P0: Validate ZIP entry paths to prevent path traversal
-          const dest = path.normalize(path.join(absoluteTmpDir, entry.fileName));
-          if (!dest.startsWith(absoluteTmpDir)) {
+          // P1: Use path.relative for robust path traversal protection
+          const dest = path.resolve(path.join(absoluteTmpDir, entry.fileName));
+          const relative = path.relative(absoluteTmpDir, dest);
+
+          if (relative.startsWith('..') || path.isAbsolute(relative)) {
             return reject(new Error(`Potential path traversal attack detected in ZIP entry: ${entry.fileName}`));
           }
 
@@ -30,7 +32,6 @@ export class UnpackService {
 
               const writeStream = fs.createWriteStream(dest);
 
-              // P1: Handle read/write stream errors
               readStream.on('error', (err) => reject(err));
               writeStream.on('error', (err) => reject(err));
 

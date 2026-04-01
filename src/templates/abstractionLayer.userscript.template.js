@@ -20,14 +20,12 @@ async function _storageGet(keys) {
     let defaults = {};
 
     if (keys === null) {
-      // P1: Handle null (get all)
       keyList = await GM_listValues();
     } else if (typeof keys === "string") {
       keyList = [keys];
     } else if (Array.isArray(keys)) {
       keyList = keys;
     } else if (typeof keys === "object" && keys !== null) {
-      // P1: Handle object (defaults pattern)
       keyList = Object.keys(keys);
       defaults = keys;
     } else {
@@ -85,11 +83,17 @@ async function _fetch(url, options = {}) {
             url: resp.finalUrl || url,
             headers: new Headers(responseHeaders),
             text: () => Promise.resolve(resp.responseText),
-            json: () => Promise.resolve(JSON.parse(resp.responseText)),
+            // P1: Handle JSON parsing error as a rejected promise
+            json: () => {
+              try {
+                return Promise.resolve(JSON.parse(resp.responseText));
+              } catch (e) {
+                return Promise.reject(e);
+              }
+            },
             blob: () => Promise.resolve(resp.response),
             arrayBuffer: () => Promise.resolve(resp.response)
           };
-          // P1: Resolve even on 4xx/5xx to match fetch contract
           resolve(mock);
         },
         onerror: (e) => reject(new Error("Network Error")),
