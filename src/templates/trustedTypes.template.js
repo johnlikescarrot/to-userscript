@@ -1,11 +1,10 @@
-// Needed on some sites for scripts to set .innerHTML of things.
+// P1: Limit Trusted Types policy to only createHTML
 const passThroughFunc = (string) => string;
 if (window.trustedTypes && window.trustedTypes.createPolicy) {
     if (!trustedTypes.defaultPolicy) {
         window.trustedTypes.createPolicy("default", {
             createHTML: passThroughFunc,
-            createScript: passThroughFunc,
-            createScriptURL: passThroughFunc,
+            // createScript and createScriptURL are intentionally excluded for security
         });
     }
 }

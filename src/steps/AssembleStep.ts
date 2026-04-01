@@ -44,16 +44,17 @@ async function executeAllScripts(globalThis, extensionCssData) {
 
     // Inject CSS
     for (const [path, css] of Object.entries(extensionCssData)) {
-        const style = document.createElement('style');
-        style.textContent = css;
-        style.setAttribute('data-extension-path', path);
-        (document.head || document.documentElement).appendChild(style);
+        try {
+            const style = document.createElement('style');
+            style.textContent = css;
+            style.setAttribute('data-extension-path', path);
+            (document.head || document.documentElement).appendChild(style);
+        } catch(e) {}
     }
 
     // --- Document Start
     ${runAtMap['document-start'].join('\n\n')}
 
-    // --- Wait for Document End
     if (document.readyState === 'loading') {
         await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
     }
@@ -61,7 +62,6 @@ async function executeAllScripts(globalThis, extensionCssData) {
     // --- Document End
     ${runAtMap['document-end'].join('\n\n')}
 
-    // --- Wait for Document Idle
     if (typeof window.requestIdleCallback === 'function') {
         await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
     } else {
@@ -100,12 +100,10 @@ async function executeAllScripts(globalThis, extensionCssData) {
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
-    // --- Assets Map
-    const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap)};
-
     // --- Polyfill & Logic
     ${mainPolyfill}
 
+    // --- Logic
     ${finalScript}
 
     main().catch(e => _error('Initialization error', e));

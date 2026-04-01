@@ -29,14 +29,14 @@ export class AssetService {
     const processFile = async (relPath: string) => {
       // P2: Strip query/hash fragments
       const cleanRelPath = relPath.split(/[?#]/)[0];
-      const normalized = normalizePath(cleanRelPath);
+      if (!cleanRelPath) return; // Prevent empty path from query-only refs
 
+      const normalized = normalizePath(cleanRelPath);
       if (processedFiles.has(normalized)) return;
 
       const fullPath = path.join(extensionRoot, normalized);
       if (!(await fs.pathExists(fullPath))) return;
 
-      // P2: Mark as processed BEFORE recursing to prevent infinite loops
       processedFiles.add(normalized);
 
       const ext = path.extname(normalized).toLowerCase();
@@ -47,8 +47,6 @@ export class AssetService {
         if (['.html', '.htm', '.css'].includes(ext)) {
           const type = ext === '.css' ? 'CSS' : 'HTML';
           const pattern = type === 'CSS' ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
-
-          // P2: Reset global regex lastIndex
           pattern.lastIndex = 0;
 
           let match;
@@ -72,12 +70,13 @@ export class AssetService {
       }
     };
 
-    // Initial discovery from manifest
     const initialFiles = new Set<string>();
+    // High-fidelity asset discovery
     if (manifest.manifest_version === 2) {
       if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
       if (manifest.options_page) initialFiles.add(manifest.options_page);
       if (manifest.browser_action?.default_popup) initialFiles.add(manifest.browser_action.default_popup);
+      if (manifest.page_action?.default_popup) initialFiles.add(manifest.page_action.default_popup);
     } else {
       if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
       if (manifest.action?.default_popup) initialFiles.add(manifest.action.default_popup);

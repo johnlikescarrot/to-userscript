@@ -19,11 +19,14 @@ function sendAbstractionRequest(method, args = []) {
       requestId,
       method,
       args,
-    });
+    }, "*");
   });
 }
 
 window.addEventListener("message", (event) => {
+  // P1: Validate event source to restrict responses to the expected parent frame
+  if (event.source !== window.parent) return;
+
   const { type, requestId, success, result, error } = event.data;
 
   if (type === "abstraction-response") {
@@ -76,7 +79,6 @@ async function _fetch(url, options) {
 }
 
 function _registerMenuCommand(name, func) {
-  _warn("_registerMenuCommand called from iframe context:", name);
   return sendAbstractionRequest("_registerMenuCommand", [
     name,
     func.toString(),

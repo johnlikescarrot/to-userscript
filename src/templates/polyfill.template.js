@@ -2,60 +2,72 @@ function buildPolyfill({ isBackground = false } = {}) {
   const BUS = createEventBus("{{SCRIPT_ID}}");
   const RUNTIME = createRuntime(isBackground ? "background" : "tab", BUS);
 
+  const storageChangeListeners = new Set();
+  function broadcastStorageChange(changes, areaName) {
+    storageChangeListeners.forEach((listener) => {
+      try { listener(changes, areaName); } catch(e) {}
+    });
+  }
+
   return {
     runtime: {
       ...RUNTIME,
       getManifest: () => JSON.parse(JSON.stringify(INJECTED_MANIFEST)),
       getURL: (path) => _createAssetUrl(path),
-      openOptionsPage: () => { _log("Opening options page..."); }
+      openOptionsPage: () => {
+        if (OPTIONS_PAGE_PATH) _openTab(_createAssetUrl(OPTIONS_PAGE_PATH), true);
+        else _warn("No options page defined.");
+      },
+      id: "{{SCRIPT_ID}}"
     },
     i18n: {
-      getMessage: (key) => LOCALE_KEYS[key]?.message || key,
-      getUILanguage: () => USED_LOCALE
+      getMessage: (key, subs = []) => {
+        let msg = LOCALE_KEYS[key]?.message || key;
+        (Array.isArray(subs) ? subs : [subs]).forEach((s, i) => msg = msg.replace(`$${i+1}`, s));
+        return msg;
+      },
+      getUILanguage: () => USED_LOCALE || "en"
     },
     storage: {
       local: {
-        get: (keys, cb) => {
-          const p = _storageGet(keys);
-          if (cb) p.then(cb);
-          return p;
-        },
-        set: (items, cb) => {
-          const p = _storageSet(items);
-          if (cb) p.then(cb);
-          return p;
-        },
-        remove: (k, cb) => {
-          const p = _storageRemove(k);
-          if (cb) p.then(cb);
-          return p;
-        },
-        clear: (cb) => {
-          const p = _storageClear();
-          if (cb) p.then(cb);
-          return p;
-        },
-        onChanged: { addListener: () => {}, removeListener: () => {} }
+        get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
+        set: (i, cb) => { const p = _storageSet(i).then(() => broadcastStorageChange(i, "local")); if (cb) p.then(cb); return p; },
+        remove: (k, cb) => { const p = _storageRemove(k).then(() => broadcastStorageChange({}, "local")); if (cb) p.then(cb); return p; },
+        clear: (cb) => { const p = _storageClear().then(() => broadcastStorageChange({}, "local")); if (cb) p.then(cb); return p; },
+        onChanged: { addListener: (l) => storageChangeListeners.add(l), removeListener: (l) => storageChangeListeners.delete(l) }
       },
       sync: {
         get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
-        set: (i, cb) => { const p = _storageSet(i); if (cb) p.then(cb); return p; }
+        set: (i, cb) => { const p = _storageSet(i).then(() => broadcastStorageChange(i, "sync")); if (cb) p.then(cb); return p; }
+      },
+      onChanged: {
+        // P1: Attached to storage as per spec
+        addListener: (l) => storageChangeListeners.add(l),
+        removeListener: (l) => storageChangeListeners.delete(l)
       }
     },
     tabs: {
-      create: (props) => _openTab(props.url),
+      create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
       sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
     },
     notifications: {
-      create: (id, opts) => Promise.resolve(id)
+      create: (arg1, arg2, cb) => {
+        const id = typeof arg1 === 'string' ? arg1 : Math.random().toString();
+        const opts = typeof arg1 === 'object' ? arg1 : arg2;
+        const callback = typeof arg2 === 'function' ? arg2 : cb;
+        // Basic web notification fallback
+        if (Notification.permission === "granted") new Notification(opts.title, { body: opts.message });
+        if (callback) callback(id);
+        return Promise.resolve(id);
+      }
     },
     permissions: {
       contains: () => Promise.resolve(true),
       request: () => Promise.resolve(true)
     },
     contextMenus: {
-      create: (props) => _registerMenuCommand(props.title, props.onclick),
+      create: (props) => { _registerMenuCommand(props.title, props.onclick); return props.id || 1; },
       removeAll: () => {}
     }
   };

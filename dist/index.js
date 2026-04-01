@@ -5,7 +5,7 @@ import {
   ManifestV2Schema,
   ManifestV3Schema,
   convertExtension
-} from "./chunk-2DQC3BJ6.js";
+} from "./chunk-CBWDTYPJ.js";
 export {
   ContentScriptSchema,
   ConversionContext,
