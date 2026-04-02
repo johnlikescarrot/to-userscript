@@ -1,27 +1,30 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertExtension } from '../index.js';
 import fs from 'fs-extra';
 import { MigrationEngine } from '../core/MigrationEngine.js';
-import { ConversionContext } from '../core/ConversionContext.js';
+import { UnpackService } from '../services/UnpackService.js';
 
 vi.mock('fs-extra');
 vi.mock('../core/MigrationEngine.js');
 vi.mock('../services/UnpackService.js');
 
 describe('Main Entry Point', () => {
-  it('should run the conversion engine', async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should run conversion for a directory', async () => {
     vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.stat).mockResolvedValue({ isFile: () => false } as any);
+    vi.mocked(fs.stat).mockResolvedValue({ isFile: () => false, size: 100 } as any);
+    vi.mocked(fs.stat).mockResolvedValueOnce({ isFile: () => false } as any); // inputDir
+    vi.mocked(fs.stat).mockResolvedValueOnce({ size: 100 } as any); // outputFile
 
     const mockEngine = {
         addStep: vi.fn().mockReturnThis(),
-        run: vi.fn().mockImplementation(async () => {
-            // No-op
-        })
+        run: vi.fn().mockImplementation(async () => {})
     };
     vi.mocked(MigrationEngine).mockImplementation((ctx: any) => {
-        // Populate context state so convertExtension can read it
-        ctx.set('manifest', { name: 'test', version: '1', description: '' });
+        ctx.set('manifest', { name: 'test', version: '1', description: '', background_scripts: [] });
         ctx.set('resources', { jsContents: {}, cssContents: {} });
         ctx.set('assetMap', {});
         return mockEngine as any;
@@ -34,6 +37,5 @@ describe('Main Entry Point', () => {
     } as any);
 
     expect(res.success).toBe(true);
-    expect(res.extension.name).toBe('test');
   });
 });

@@ -22,12 +22,17 @@ function createEventBus(scopeId, type = "page") {
 
   return {
     on(event, fn) { handlers[event] = handlers[event] || []; handlers[event].push(fn); },
+    off(event, fn) {
+        if (!handlers[event]) return;
+        const index = handlers[event].indexOf(fn);
+        if (index >= 0) handlers[event].splice(index, 1);
+    },
     emit(event, payload, { to } = {}) {
       const envelope = { __eventBus: true, scopeId, event, payload };
       if (to) {
         to.postMessage(envelope, "*");
       } else {
-        // Broadcast
+        // Broadcast locally and to peers
         (handlers[event] || []).forEach(fn => fn(payload, { source: window }));
         if (type === "page") children.forEach(c => c.postMessage(envelope, "*"));
         else window.parent.postMessage(envelope, "*");
@@ -37,9 +42,68 @@ function createEventBus(scopeId, type = "page") {
 }
 
 function createRuntime(type, bus) {
-  let nextId = 1;
+  let nextIdCounter = 1;
   const pending = {};
   const listeners = [];
+  const connectListeners = [];
+
+  function createPort(portId, name, source) {
+    const onMessageListeners = [];
+    const onDisconnectListeners = [];
+    let disconnected = false;
+
+    const msgHandler = (payload, meta) => {
+      if (payload.portId !== portId) return;
+      // Loopback protection: sender (source=null) shouldn't receive its own broadcast from local window
+      if (source === null && meta.source === window) return;
+      onMessageListeners.forEach(fn => fn(payload.message, port));
+    };
+
+    const disconnectHandler = (payload) => {
+      if (payload.portId === portId && !disconnected) {
+        disconnected = true;
+        bus.off("__PORT_MSG__", msgHandler);
+        bus.off("__PORT_DISCONNECT__", disconnectHandler);
+        onDisconnectListeners.forEach(fn => fn(port));
+      }
+    };
+
+    const port = {
+      name,
+      onMessage: {
+        addListener: (fn) => onMessageListeners.push(fn),
+        removeListener: (fn) => {
+          const i = onMessageListeners.indexOf(fn);
+          if (i >= 0) onMessageListeners.splice(i, 1);
+        }
+      },
+      onDisconnect: {
+        addListener: (fn) => onDisconnectListeners.push(fn),
+        removeListener: (fn) => {
+          const i = onDisconnectListeners.indexOf(fn);
+          if (i >= 0) onDisconnectListeners.splice(i, 1);
+        }
+      },
+      postMessage: (msg) => {
+        if (disconnected) throw new Error("Attempt to use a closed port.");
+        bus.emit("__PORT_MSG__", { portId, message: msg }, { to: source });
+      },
+      disconnect: () => {
+        if (disconnected) return;
+        disconnected = true;
+        // Local cleanup
+        bus.off("__PORT_MSG__", msgHandler);
+        bus.off("__PORT_DISCONNECT__", disconnectHandler);
+        bus.emit("__PORT_DISCONNECT__", { portId }, { to: source });
+        onDisconnectListeners.forEach(fn => fn(port));
+      }
+    };
+
+    bus.on("__PORT_MSG__", msgHandler);
+    bus.on("__PORT_DISCONNECT__", disconnectHandler);
+
+    return port;
+  }
 
   if (type === "background") {
     bus.on("__REQUEST__", ({ id, message }, { source }) => {
@@ -50,7 +114,6 @@ function createRuntime(type, bus) {
         bus.emit("__RESPONSE__", { id, response: resp }, { to: source });
       }
 
-      // P1: Wrapped in try-catch and added async Promise detection
       listeners.forEach(fn => {
         try {
           const ret = fn(message, { tab: { id: source } }, sendResponse);
@@ -70,6 +133,11 @@ function createRuntime(type, bus) {
 
       if (!isAsync && !responded) sendResponse(undefined);
     });
+
+    bus.on("__CONNECT__", ({ portId, name }, { source }) => {
+        const port = createPort(portId, name, source);
+        connectListeners.forEach(fn => fn(port));
+    });
   }
 
   if (type !== "background") {
@@ -86,15 +154,24 @@ function createRuntime(type, bus) {
   function sendMessage(...args) {
     const message = args[0];
     const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
-    const id = nextId++;
+    const id = nextIdCounter++;
     return new Promise((resolve) => {
       pending[id] = { resolve, callback };
       bus.emit("__REQUEST__", { id, message });
     });
   }
 
+  function connect(info = {}) {
+    // Robust portId: counter + longer random segment
+    const portId = (nextIdCounter++) + "_" + Math.random().toString(36).substring(2, 9);
+    const name = info.name || "";
+    bus.emit("__CONNECT__", { portId, name });
+    return createPort(portId, name, null);
+  }
+
   return {
     sendMessage,
+    connect,
     onMessage: {
       addListener(fn) { listeners.push(fn); },
       removeListener(fn) {
@@ -102,11 +179,12 @@ function createRuntime(type, bus) {
         if (i >= 0) listeners.splice(i, 1);
       }
     },
-    connect(info = {}) {
-      return {
-        name: info.name, onMessage: { addListener: () => {} },
-        onDisconnect: { addListener: () => {} }, postMessage: () => {}, disconnect: () => {}
-      };
+    onConnect: {
+        addListener(fn) { connectListeners.push(fn); },
+        removeListener(fn) {
+            const i = connectListeners.indexOf(fn);
+            if (i >= 0) connectListeners.splice(i, 1);
+        }
     }
   };
 }

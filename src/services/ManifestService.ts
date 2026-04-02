@@ -1,13 +1,35 @@
 import fs from 'fs-extra';
-import { ManifestSchema, Manifest, NormalizedManifest } from '../schemas/ManifestSchema.js';
+import path from 'path';
+import { ManifestSchema, NormalizedManifest } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
+import { LocaleService } from './LocaleService.js';
 
 export class ManifestService {
-  static async load(manifestPath: string): Promise<NormalizedManifest> {
+  /**
+   * Loads, localizes, and normalizes a manifest.json file.
+   */
+  static async load(manifestPath: string, locale?: string): Promise<NormalizedManifest> {
+    const extensionRoot = path.dirname(manifestPath);
     const content = await fs.readFile(manifestPath, 'utf-8');
-    const raw = JSON.parse(content);
+
+    // 1. Initial Parse to get default_locale if needed
+    let raw = JSON.parse(content);
+    const targetLocale = locale || raw.default_locale;
+
+    // 2. Localization
+    if (targetLocale) {
+      try {
+        const messages = await LocaleService.loadMessages(extensionRoot, targetLocale);
+        raw = LocaleService.replaceInObject(raw, messages);
+      } catch (e) {
+        // Fallback to original if localization fails
+      }
+    }
+
+    // 3. Schema Validation
     const parsed = ManifestSchema.parse(raw);
 
+    // 4. Normalization
     const normalized: NormalizedManifest = {
       manifest_version: parsed.manifest_version,
       name: parsed.name,
@@ -29,7 +51,6 @@ export class ManifestService {
 
     if (parsed.manifest_version === 2) {
       normalized.action = {
-        // P1: Consistently map MV2 popup sources
         default_popup: parsed.browser_action?.default_popup || parsed.page_action?.default_popup,
         default_icon: parsed.browser_action?.default_icon,
       };
@@ -43,13 +64,21 @@ export class ManifestService {
       };
       normalized.background_scripts = parsed.background?.service_worker ? [parsed.background.service_worker] : [];
       normalized.options_page = parsed.options_ui?.page;
+
+      // Robust MV3 resource flattening
       normalized.web_accessible_resources = (parsed.web_accessible_resources || [])
-        .flatMap(r => r.resources);
+        .flatMap(entry => {
+          return entry.resources || [];
+        })
+        .map(normalizePath);
     }
 
     return normalized;
   }
 
+  /**
+   * Generates a consistent internal ID for the extension based on its name.
+   */
   static getInternalId(manifest: { name: string }): string {
     return manifest.name
       .replace(/[^a-z0-9]+/gi, '-')

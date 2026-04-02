@@ -33,14 +33,14 @@ const parser = yargs(hideBin(process.argv))
       let tempDownloadPath: string | null = null;
 
       if (source.startsWith('http')) {
-        console.log(chalk.blue('Downloading extension...'));
+        console.log(chalk.blue.bold('\n🌐 Downloading extension from web store...'));
         const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
         tempDownloadPath = path.resolve(process.cwd(), `temp-download-${Date.now()}.zip`);
         source = await DownloadService.download(url, tempDownloadPath);
       }
 
       try {
-        await convertExtension({
+        const result = await convertExtension({
           inputDir: path.resolve(source),
           outputFile: path.resolve(argv.output as string || 'extension.user.js'),
           target: argv.target,
@@ -48,12 +48,21 @@ const parser = yargs(hideBin(process.argv))
           beautify: argv.beautify,
           force: argv.force,
         });
-        console.log(chalk.green.bold('\n✨ Conversion successful!'));
+
+        console.log(chalk.green.bold('\n✨ Transmutation Successful!'));
+        console.log(chalk.dim('----------------------------------------'));
+        console.log(`${chalk.bold('Extension:')}  ${chalk.cyan(result.extension.name)}`);
+        console.log(`${chalk.bold('Version:')}    ${chalk.cyan(result.extension.version)}`);
+        console.log(`${chalk.bold('Output:')}     ${chalk.yellow(result.outputFile)}`);
+        console.log(chalk.dim('----------------------------------------'));
+        console.log(`${chalk.bold('Assets:')}     ${chalk.magenta(result.stats.assets)} files inlined`);
+        console.log(`${chalk.bold('Scripts:')}    ${chalk.magenta(result.stats.jsFiles)} JS, ${chalk.magenta(result.stats.cssFiles)} CSS`);
+        console.log(chalk.dim('----------------------------------------\n'));
+
       } catch (error) {
-        console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
+        console.error(chalk.red.bold('\n❌ Transmutation Failed:'), (error as Error).message);
         process.exit(1);
       } finally {
-        // P1: Only cleanup the explicitly tracked temporary download file
         if (tempDownloadPath) {
           await fs.remove(tempDownloadPath).catch(() => {});
         }
@@ -69,7 +78,7 @@ const parser = yargs(hideBin(process.argv))
       const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
       const dest = path.resolve(process.cwd(), 'extension.zip');
       await DownloadService.download(url, dest);
-      console.log(chalk.green('Downloaded to:'), dest);
+      console.log(chalk.green.bold('✔ Downloaded to:'), chalk.yellow(dest));
     }
   )
   .command(
@@ -79,10 +88,10 @@ const parser = yargs(hideBin(process.argv))
     async (argv) => {
       const filePath = path.resolve(argv.userscript as string);
       const fileUrl = pathToFileURL(filePath).href;
-      console.log('// ==UserScript==');
-      console.log('// @name        Requirement');
-      console.log(`// @require     ${fileUrl}`);
-      console.log('// ==/UserScript==');
+      console.log(chalk.gray('// ==UserScript=='));
+      console.log(chalk.gray(`// @name        Requirement`));
+      console.log(chalk.cyan(`// @require     ${fileUrl}`));
+      console.log(chalk.gray('// ==/UserScript==\n'));
     }
   )
   .help().alias('h', 'help').parse();

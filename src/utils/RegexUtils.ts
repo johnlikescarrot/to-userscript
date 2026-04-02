@@ -16,27 +16,39 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   const hostMatch = remaining.match(/^([^\/]+)/);
   if (!hostMatch) return '$.';
   const host = hostMatch[1];
-  const pathPart = remaining.substring(host.length);
+  let pathPart = remaining.substring(host.length);
 
   let hostRegex: string;
   if (host === '*') {
     hostRegex = '[^/]+';
   } else if (host.startsWith('*.')) {
-    hostRegex = '(?:[^\\/]+\\.)?' + escapeRegex(host.substring(2));
+    // Note: Reflecting instruction to NOT match bare domain with *.
+    hostRegex = '[^\\/]+\\.' + escapeRegex(host.substring(2));
   } else {
     hostRegex = escapeRegex(host);
   }
 
-  let pathRegex = pathPart;
-  if (!pathRegex.startsWith('/')) {
-    pathRegex = '/' + pathRegex;
+  if (!pathPart) {
+    pathPart = '/';
   }
-  pathRegex = pathRegex.split('*').map(escapeRegex).join('.*');
+  if (!pathPart.startsWith('/')) {
+    pathPart = '/' + pathPart;
+  }
+
+  // Collapse consecutive wildcards to prevent ReDoS and ensure clean Regex
+  let pathRegex = pathPart.split('*')
+    .map(escapeRegex)
+    .join('.*')
+    .replace(/(\.\*)+/g, '.*'); // Collapse multiple .* runs
 
   if (pathRegex === '/.*') {
     pathRegex = '(?:/.*)?';
   } else {
-    pathRegex = pathRegex + '(?:[?#]|$)';
+    if (pathRegex.endsWith('/')) {
+        pathRegex = pathRegex.slice(0, -1) + '[/]?(?:[?#]|$)';
+    } else {
+        pathRegex = pathRegex + '[/]?(?:[?#]|$)';
+    }
   }
 
   return `^${schemeRegex}:\\/\\/${hostRegex}${pathRegex}`;
@@ -47,8 +59,8 @@ export function convertMatchPatternToRegExp(pattern: string): RegExp {
     return new RegExp('.*');
   }
   try {
-    const singleEscapedPattern = convertMatchPatternToRegExpString(pattern).replace(/\\\\/g, '\\');
-    return new RegExp(singleEscapedPattern);
+    const res = convertMatchPatternToRegExpString(pattern);
+    return new RegExp(res);
   } catch {
     return new RegExp('$.');
   }
@@ -66,7 +78,8 @@ export function matchGlobPattern(pattern: string, testPath: string): boolean {
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, '__DOUBLESTAR__')
     .replace(/\*/g, '[^/]*')
-    .replace(/__DOUBLESTAR__/g, '.*');
+    .replace(/__DOUBLESTAR__/g, '.*')
+    .replace(/(\.\*)+/g, '.*'); // Prevent ReDoS here too
 
   regexPattern = '^' + regexPattern + '$';
 

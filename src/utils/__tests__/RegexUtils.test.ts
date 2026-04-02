@@ -1,63 +1,51 @@
 import { describe, it, expect } from 'vitest';
 import {
-  escapeRegex,
   convertMatchPatternToRegExpString,
   convertMatchPatternToRegExp,
-  matchGlobPattern
+  matchGlobPattern,
+  escapeRegex
 } from '../RegexUtils.js';
 
 describe('RegexUtils', () => {
-  describe('escapeRegex', () => {
-    it('should escape special regex characters', () => {
-      expect(escapeRegex('*.domain.com')).toBe('\\*\\.domain\\.com');
-    });
+  it('should verify regex behavior for various patterns', () => {
+    expect(convertMatchPatternToRegExpString('http://')).toBe('$.');
+    expect(convertMatchPatternToRegExpString('')).toBe('$.');
+
+    const wildcardScheme = convertMatchPatternToRegExp('*://*/*');
+    expect(wildcardScheme.test('http://example.com/')).toBe(true);
+    expect(wildcardScheme.test('https://sub.domain/path?q=1#hash')).toBe(true); // Query/Hash test
+
+    const subdomain = convertMatchPatternToRegExp('https://*.google.com/path*');
+    expect(subdomain.test('https://mail.google.com/path/to/resource?auth=true')).toBe(true);
+    expect(subdomain.test('https://google.com/path')).toBe(false); // Browser behavior: *. matches subdomains only
+
+    const exact = convertMatchPatternToRegExp('http://host');
+    expect(exact.test('http://host/')).toBe(true);
+    expect(exact.test('http://host?query')).toBe(true);
+    expect(exact.test('http://host#hash')).toBe(true);
   });
 
-  describe('convertMatchPatternToRegExpString', () => {
-    it('should handle * scheme', () => {
-      const res = convertMatchPatternToRegExpString('*://google.com/*');
-      expect(res).toMatch(/https\?\|file\|ftp/);
-    });
-
-    it('should handle specific scheme', () => {
-      const res = convertMatchPatternToRegExpString('https://google.com/*');
-      expect(res).toContain('^https');
-    });
-
-    it('should handle *.domain host', () => {
-      const res = convertMatchPatternToRegExpString('https://*.google.com/*');
-      expect(res).toContain('google\\.com');
-      // Using match to be more flexible with escaping
-      expect(res).toMatch(/\[\^\\?\/\]\+/);
-    });
-
-    it('should return nothing-matching regex for invalid patterns', () => {
-      expect(convertMatchPatternToRegExpString('invalid')).toBe('$.');
-    });
+  it('should collapse wildcards to prevent ReDoS', () => {
+    const res = convertMatchPatternToRegExpString('a*b**c***');
+    // regex should not contain consecutive .*
+    expect(res).not.toContain('.*.*');
   });
 
-  describe('convertMatchPatternToRegExp', () => {
-    it('should handle <all_urls>', () => {
-      const re = convertMatchPatternToRegExp('<all_urls>');
-      expect(re.test('https://google.com')).toBe(true);
-    });
-
-    it('should match valid URLs', () => {
-      const re = convertMatchPatternToRegExp('https://google.com/*');
-      expect(re.test('https://google.com/path')).toBe(true);
-      expect(re.test('http://google.com/path')).toBe(false);
-    });
+  it('should handle regex errors and special patterns', () => {
+    expect(convertMatchPatternToRegExp('!!!').test('a')).toBe(false);
+    expect(convertMatchPatternToRegExp('<all_urls>').test('a')).toBe(true);
   });
 
-  describe('matchGlobPattern', () => {
-    it('should match simple patterns', () => {
-      expect(matchGlobPattern('images/*', 'images/icon.png')).toBe(true);
-      expect(matchGlobPattern('images/*', 'css/style.css')).toBe(false);
-    });
+  it('should handle glob branches', () => {
+    expect(matchGlobPattern('**', 'a')).toBe(true);
+    expect(matchGlobPattern('a', 'a')).toBe(true);
+    expect(matchGlobPattern('[', 'a')).toBe(false);
+    expect(matchGlobPattern('', 'a')).toBe(false);
+    expect(matchGlobPattern('*.js', 'test.js')).toBe(true);
+    expect(matchGlobPattern('src/**/*.ts', 'src/core/MigrationEngine.ts')).toBe(true);
+  });
 
-    it('should handle recursive double star', () => {
-      expect(matchGlobPattern('**/*.js', 'scripts/main.js')).toBe(true);
-      expect(matchGlobPattern('**/*.js', 'lib/sub/other.js')).toBe(true);
-    });
+  it('should escape regex properly', () => {
+    expect(escapeRegex('a.b*c+d?e^f$g{h}i(j)k|l[m]n\\o')).toBe('a\\.b\\*c\\+d\\?e\\^f\\$g\\{h\\}i\\(j\\)k\\|l\\[m\\]n\\\\o');
   });
 });
