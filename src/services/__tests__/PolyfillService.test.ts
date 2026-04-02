@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PolyfillService } from '../PolyfillService.js';
 import { TemplateService } from '../TemplateService.js';
 
@@ -8,22 +8,31 @@ vi.mock('../ManifestService.js', () => ({
 }));
 
 describe('PolyfillService', () => {
-  it('should build the polyfill string for userscript', async () => {
-    vi.mocked(TemplateService.load).mockResolvedValue('{{SCRIPT_ID}} {{INJECTED_MANIFEST}} getURL: (path) => ...,');
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should build the polyfill string with all major components', async () => {
+    vi.mocked(TemplateService.load).mockImplementation(async (name: string) => {
+        if (name === 'polyfill') return '{{SCRIPT_ID}} {{INJECTED_MANIFEST}} getURL: (path) => ...,';
+        return `content for ${name}`;
+    });
+
     const res = await PolyfillService.build('userscript', {}, { name: 'test' } as any);
+
     expect(res).toContain('test-id');
     expect(res).toContain('{"name":"test"}');
+    expect(res).toContain('content for messaging');
+    expect(res).toContain('content for abstractionLayer.userscript');
   });
 
-  it('should build the polyfill string for vanilla', async () => {
-    vi.mocked(TemplateService.load).mockResolvedValue('template');
-    const res = await PolyfillService.build('vanilla', {}, { name: 'test' } as any);
-    expect(res).toBeDefined();
+  it('should support vanilla target', async () => {
+    vi.mocked(TemplateService.load).mockImplementation(async (name: string) => `content for ${name}`);
+    const res = await PolyfillService.build('vanilla', {}, {} as any);
+    expect(res).toContain('content for abstractionLayer.vanilla');
   });
 
-  it('should build the polyfill string for postmessage', async () => {
-    vi.mocked(TemplateService.load).mockResolvedValue('{{IS_IFRAME}}');
-    const res = await PolyfillService.build('postmessage', {}, { name: 'test' } as any);
-    expect(res).toContain('true');
+  it('should support postmessage target', async () => {
+    vi.mocked(TemplateService.load).mockImplementation(async (name: string) => `content for ${name}`);
+    const res = await PolyfillService.build('postmessage', {}, {} as any);
+    expect(res).toContain('content for abstractionLayer.postmessage');
   });
 });

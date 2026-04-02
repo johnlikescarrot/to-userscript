@@ -39,7 +39,13 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   if (pathRegex === '/.*') {
     pathRegex = '(?:/.*)?';
   } else {
-    pathRegex = pathRegex + '(?:[?#]|$)';
+    // Standard match pattern path semantics: if it ends in /, it matches with or without trailing /
+    // If it doesn't end in / it still should match optional / at end of string
+    if (pathRegex.endsWith('/')) {
+        pathRegex = pathRegex.slice(0, -1) + '[/]?(?:[?#]|$)';
+    } else {
+        pathRegex = pathRegex + '[/]?(?:[?#]|$)';
+    }
   }
 
   return `^${schemeRegex}:\\/\\/${hostRegex}${pathRegex}`;

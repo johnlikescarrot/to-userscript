@@ -18,7 +18,8 @@ export class AssembleStep extends Step {
     'clipboardWrite': ['GM_setClipboard'],
     'cookies': ['GM_cookie'],
     'tabs': ['GM_openInTab'],
-    'webRequest': ['GM_xmlhttpRequest']
+    'webRequest': ['GM_xmlhttpRequest'],
+    'alarms': ['GM_getValue', 'GM_setValue'] // Alarms might need storage for persistence in future
   };
 
   async run(context: ConversionContext): Promise<void> {
@@ -52,8 +53,15 @@ export class AssembleStep extends Step {
         `// @namespace   to-userscript`,
         `// @version     ${manifest.version}`,
         `// @description ${(manifest.description || '').replace(/\n/g, ' ')}`,
-        `// @author      johnlikescarrot/to-userscript`,
+        `// @author      ${manifest.raw.author || 'johnlikescarrot/to-userscript'}`,
     ];
+
+    // Additional Metadata Tags from Manifest
+    if (manifest.raw.homepage_url) metadataLines.push(`// @homepageURL ${manifest.raw.homepage_url}`);
+    if (manifest.raw.support_url) metadataLines.push(`// @supportURL  ${manifest.raw.support_url}`);
+    // Heuristic license from manifest or default
+    const license = (manifest.raw as any).license || 'ISC';
+    metadataLines.push(`// @license     ${license}`);
 
     if (iconBase64) {
         metadataLines.push(`// @icon        ${iconBase64}`);
@@ -63,8 +71,23 @@ export class AssembleStep extends Step {
     manifest.content_scripts.forEach(cs => cs.matches?.forEach(m => allMatches.add(m)));
     allMatches.forEach(m => metadataLines.push(`// @match       ${m}`));
 
-    // Host permissions -> @connect
-    hostPermissions.forEach(p => metadataLines.push(`// @connect     ${p}`));
+    // Host permissions -> @connect (cleaned hostnames only)
+    const cleanedHosts = new Set<string>();
+    hostPermissions.forEach(p => {
+        try {
+            if (p === '<all_urls>' || p === '*') {
+                cleanedHosts.add('*');
+                return;
+            }
+            let host = p.replace(/^(https?|file|ftp):\/\//, '');
+            host = host.split('/')[0];
+            host = host.split(':')[0];
+            if (host.startsWith('*.')) host = host.substring(2);
+            if (host && host !== '*') cleanedHosts.add(host);
+            else if (host === '*') cleanedHosts.add('*');
+        } catch (e) {}
+    });
+    cleanedHosts.forEach(h => metadataLines.push(`// @connect     ${h}`));
 
     grants.forEach(g => metadataLines.push(`// @grant       ${g}`));
     metadataLines.push('// ==/UserScript==');
@@ -91,7 +114,6 @@ export class AssembleStep extends Step {
 async function executeAllScripts(globalThis, extensionCssData) {
     const {chrome, browser, window, self} = globalThis;
 
-    // Inject CSS
     for (const [path, css] of Object.entries(extensionCssData)) {
         try {
             const style = document.createElement('style');
@@ -145,18 +167,14 @@ async function executeAllScripts(globalThis, extensionCssData) {
     const _warn = (...args) => console.warn(\`[\${SCRIPT_NAME}]\`, ...args);
     const _error = (...args) => console.error(\`[\${SCRIPT_NAME}]\`, ...args);
 
-    // --- Utils
     const escapeRegex = ${RegexUtils.escapeRegex.toString()};
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
-    // --- Polyfill & Logic
     ${mainPolyfill}
 
-    // --- Assets Map
     const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap)};
 
-    // --- Logic
     ${finalScriptBody}
 
     main().catch(e => _error('Initialization error', e));

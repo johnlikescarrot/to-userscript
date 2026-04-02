@@ -37,8 +37,7 @@ function buildPolyfill({ isBackground = false } = {}) {
         let msg = LOCALE_KEYS[key]?.message || key;
         const subList = Array.isArray(subs) ? subs : [subs];
         subList.forEach((s, i) => {
-          // Avoid ${} syntax to prevent build-time interpolation conflicts
-          msg = msg.replace('$' + (i + 1), s);
+          msg = msg.split('$' + (i + 1)).join(s);
         });
         return msg;
       },
@@ -87,22 +86,30 @@ function buildPolyfill({ isBackground = false } = {}) {
         removeListener: (l) => storageChangeListeners.delete(l)
       }
     },
+    alarms: {
+        create: (name, props) => { _log("Alarm created (stub):", name, props); },
+        get: (name, cb) => { if (cb) cb(null); return Promise.resolve(null); },
+        clear: (name, cb) => { if (cb) cb(true); return Promise.resolve(true); },
+        onAlarm: { addListener: () => {}, removeListener: () => {} }
+    },
+    webNavigation: {
+        onCompleted: { addListener: () => {}, removeListener: () => {} },
+        onBeforeNavigate: { addListener: () => {}, removeListener: () => {} },
+        onCommitted: { addListener: () => {}, removeListener: () => {} }
+    },
     tabs: {
       create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
-      /** Single-tab polyfill: id is ignored, maps to primary tab (id=1) */
       get: (id) => Promise.resolve({ id: 1, url: CURRENT_LOCATION, active: true }),
-      /** Single-tab polyfill: id is ignored, maps to primary tab (id=1) */
       update: (id, props) => {
-        if (props.url) {
+        if (props && props.url) {
             if (id === 1) window.location.href = props.url;
             else _openTab(props.url, props.active !== false);
         }
-        return Promise.resolve({ id: 1, url: props.url || CURRENT_LOCATION, active: true });
+        return Promise.resolve({ id: 1, url: (props && props.url) || CURRENT_LOCATION, active: true });
       },
-      /** Single-tab polyfill: id is ignored, maps to primary tab (id=1) */
       remove: (id) => {
-        if (id === 1) _closeTab();
+        _closeTab();
         return Promise.resolve();
       },
       sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
@@ -129,10 +136,10 @@ function buildPolyfill({ isBackground = false } = {}) {
 
         if (typeof GM_notification === "function") {
           GM_notification(details);
-        } else if (Notification.permission === "granted") {
+        } else if (typeof Notification === "function" && Notification.permission === "granted") {
           const n = new Notification(opts.title, { body: opts.message, icon: opts.iconUrl });
           if (opts.onclick) n.onclick = opts.onclick;
-          if (callback) callback(id);
+          setTimeout(() => { if (callback) callback(id); }, 0);
         } else {
           _warn("Notifications not supported or permission denied.");
           if (callback) callback(id);
