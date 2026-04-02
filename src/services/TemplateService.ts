@@ -6,22 +6,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class TemplateService {
-  // Use a more robust way to find templates, checking both src (for tests) and dist (for production)
-  private static getTemplatesDir(): string {
+  private static templatesDirCache: string | null = null;
+
+  private static async getTemplatesDir(): Promise<string> {
+      if (this.templatesDirCache) {
+          return this.templatesDirCache;
+      }
+
       // In bundled production, it's relative to the chunk in dist/
       const distPath = path.resolve(__dirname, './templates');
-      if (fs.pathExistsSync(distPath)) return distPath;
+      if (await fs.pathExists(distPath)) {
+          this.templatesDirCache = distPath;
+          return distPath;
+      }
 
       // In development/tests, it's in src/templates
       const srcPath = path.resolve(__dirname, '../templates');
-      if (fs.pathExistsSync(srcPath)) return srcPath;
-
-      // Fallback
+      this.templatesDirCache = srcPath;
       return srcPath;
   }
 
   static async load(name: string): Promise<string> {
-    const templatesDir = this.getTemplatesDir();
+    const templatesDir = await this.getTemplatesDir();
     const filePath = path.join(templatesDir, name);
     const exists = await fs.pathExists(filePath);
     if (exists) {

@@ -74,7 +74,18 @@ function _toggleSidePanel(path) {
         justify-content: space-between;
         align-items: center;
     `;
-    header.innerHTML = `<strong>${INJECTED_MANIFEST.name}</strong> <button id="close-sp" style="cursor:pointer; border:none; background:none; font-size: 20px;">&times;</button>`;
+
+    const title = document.createElement('strong');
+    title.textContent = INJECTED_MANIFEST.name;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'close-sp';
+    closeBtn.style.cssText = 'cursor:pointer; border:none; background:none; font-size: 20px;';
+    closeBtn.innerHTML = '&times;'; // Safe as it's a static entity
+    closeBtn.onclick = () => _toggleSidePanel();
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
 
     const iframe = document.createElement('iframe');
     iframe.src = _createAssetUrl(path);
@@ -84,8 +95,6 @@ function _toggleSidePanel(path) {
     wrapper.appendChild(iframe);
     shadow.appendChild(wrapper);
     document.body.appendChild(sidePanelContainer);
-
-    shadow.getElementById('close-sp').onclick = () => _toggleSidePanel();
 }
 
 {{COMBINED_EXECUTION_LOGIC}}

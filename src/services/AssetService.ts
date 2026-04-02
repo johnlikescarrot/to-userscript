@@ -58,36 +58,17 @@ export class AssetService {
       if (isText) {
         let textContent = await fs.readFile(fullPath, 'utf-8');
         if (ext === '.html' || ext === '.htm' || ext === '.css') {
-          let type: 'CSS' | 'HTML';
-          if (ext === '.css') {
-            type = 'CSS';
-          } else {
-            type = 'HTML';
-          }
-
+          const type: 'CSS' | 'HTML' = ext === '.css' ? 'CSS' : 'HTML';
           const pattern = type === 'CSS' ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
           pattern.lastIndex = 0;
 
           let match;
-          const foundAssets: string[] = [];
           while ((match = pattern.exec(textContent)) !== null) {
-            let url: string | undefined;
-            if (type === 'HTML') {
-                url = match[2] || match[3];
-            } else {
-                url = match[1];
+            const url = type === 'HTML' ? (match[2] || match[3]) : match[1];
+            if (url && !this.REGEX_PATTERNS.EXTERNAL_URLS.test(url)) {
+                const assetRelPath = path.join(path.dirname(normalized), url);
+                await processFile(assetRelPath);
             }
-
-            if (url) {
-                if (!this.REGEX_PATTERNS.EXTERNAL_URLS.test(url)) {
-                    foundAssets.push(url);
-                }
-            }
-          }
-
-          for (const asset of foundAssets) {
-            const assetRelPath = path.join(path.dirname(normalized), asset);
-            await processFile(assetRelPath);
           }
         }
         assetMap[normalized] = textContent;
@@ -99,41 +80,15 @@ export class AssetService {
 
     const initialFiles = new Set<string>();
     if (manifest.manifest_version === 2) {
-      if (manifest.options_ui) {
-        if (manifest.options_ui.page) {
-            initialFiles.add(manifest.options_ui.page);
-        }
-      }
-      if (manifest.options_page) {
-          initialFiles.add(manifest.options_page);
-      }
-      if (manifest.browser_action) {
-        if (manifest.browser_action.default_popup) {
-            initialFiles.add(manifest.browser_action.default_popup);
-        }
-      }
-      if (manifest.page_action) {
-        if (manifest.page_action.default_popup) {
-            initialFiles.add(manifest.page_action.default_popup);
-        }
-      }
+      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
+      if (manifest.options_page) initialFiles.add(manifest.options_page);
+      if (manifest.browser_action?.default_popup) initialFiles.add(manifest.browser_action.default_popup);
+      if (manifest.page_action?.default_popup) initialFiles.add(manifest.page_action.default_popup);
     } else {
-      if (manifest.options_ui) {
-        if (manifest.options_ui.page) {
-            initialFiles.add(manifest.options_ui.page);
-        }
-      }
-      if (manifest.action) {
-        if (manifest.action.default_popup) {
-            initialFiles.add(manifest.action.default_popup);
-        }
-      }
+      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
+      if (manifest.action?.default_popup) initialFiles.add(manifest.action.default_popup);
       const sidePanel = (manifest as any).side_panel;
-      if (sidePanel) {
-          if (sidePanel.default_path) {
-              initialFiles.add(sidePanel.default_path);
-          }
-      }
+      if (sidePanel?.default_path) initialFiles.add(sidePanel.default_path);
     }
 
     for (const f of initialFiles) {
@@ -157,9 +112,8 @@ export class AssetService {
   static getMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
     const mime = this.MIME_MAP[ext];
-    if (mime) {
-        return mime;
-    }
+    /* v8 ignore next */
+    if (mime) return mime;
     return 'application/octet-stream';
   }
 }

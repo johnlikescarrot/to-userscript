@@ -10,12 +10,12 @@ describe('AssetService', () => {
   });
 
   it('should hit all branches including CSS and HTML', async () => {
-    vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.readFile).mockImplementation((p: any) => {
-        if (p.endsWith('.html')) return Promise.resolve('<html><img src="img.png"><img src=noquote.png><img src=""><link href="style.css"></html>') as any;
-        if (p.endsWith('.css')) return Promise.resolve('body { background: url("bg.jpg"); }') as any;
-        return Promise.resolve(Buffer.from('data')) as any;
-    });
+    vi.mocked(fs.pathExists).mockResolvedValue(true as never);
+    vi.mocked(fs.readFile).mockImplementation(((p: any) => {
+        if (p.endsWith('.html')) return Promise.resolve('<html><img src="img.png"><img src=noquote.png><img src=""><link href="style.css"></html>');
+        if (p.endsWith('.css')) return Promise.resolve('body { background: url("bg.jpg"); }');
+        return Promise.resolve(Buffer.from('data'));
+    }) as any);
 
     const m: any = {
         manifest_version: 3,
@@ -30,8 +30,8 @@ describe('AssetService', () => {
   });
 
   it('should handle all discovery paths', async () => {
-      vi.mocked(fs.pathExists).mockResolvedValue(true);
-      vi.mocked(fs.readFile).mockResolvedValue('content');
+      vi.mocked(fs.pathExists).mockResolvedValue(true as never);
+      vi.mocked(fs.readFile).mockResolvedValue('content' as any);
 
       const v2: any = {
           manifest_version: 2,

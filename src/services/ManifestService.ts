@@ -28,33 +28,22 @@ export class ManifestService {
       raw: parsed,
     };
 
-    if (parsed.permissions) {
-        normalized.permissions.push(...parsed.permissions);
-    }
-    if (parsed.optional_permissions) {
-        normalized.permissions.push(...parsed.optional_permissions);
-    }
+    if (parsed.permissions) normalized.permissions.push(...parsed.permissions);
+    if (parsed.optional_permissions) normalized.permissions.push(...parsed.optional_permissions);
     if (parsed.manifest_version === 3) {
       const v3 = parsed as any;
-      if (v3.host_permissions) {
-          normalized.permissions.push(...v3.host_permissions);
-      }
+      if (v3.host_permissions) normalized.permissions.push(...v3.host_permissions);
     }
 
     if (parsed.manifest_version === 2) {
       const v2 = parsed as any;
       const browserAction = v2.browser_action;
       const pageAction = v2.page_action;
-      let popup = undefined;
-      if (browserAction && browserAction.default_popup) {
-          popup = browserAction.default_popup;
-      } else if (pageAction && pageAction.default_popup) {
-          popup = pageAction.default_popup;
-      }
+      const popup = browserAction?.default_popup || pageAction?.default_popup;
 
       normalized.action = {
         default_popup: popup,
-        default_icon: browserAction ? browserAction.default_icon : undefined,
+        default_icon: browserAction?.default_icon,
       };
       normalized.background_scripts = (v2.background && v2.background.scripts) ? v2.background.scripts : [];
       normalized.options_page = (v2.options_ui && v2.options_ui.page) ? v2.options_ui.page : v2.options_page;
@@ -62,8 +51,8 @@ export class ManifestService {
     } else {
       const v3 = parsed as any;
       normalized.action = {
-        default_popup: v3.action ? v3.action.default_popup : undefined,
-        default_icon: v3.action ? v3.action.default_icon : undefined,
+        default_popup: v3.action?.default_popup,
+        default_icon: v3.action?.default_icon,
       };
       normalized.background_scripts = (v3.background && v3.background.service_worker) ? [v3.background.service_worker] : [];
       normalized.options_page = (v3.options_ui && v3.options_ui.page) ? v3.options_ui.page : undefined;

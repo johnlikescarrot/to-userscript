@@ -53,7 +53,7 @@ function buildPolyfill({ isBackground = false } = {}) {
         if (details.files) {
           for (const file of details.files) {
             const content = EXTENSION_ASSETS_MAP[file];
-            if (content) eval(content);
+            if (content) (0, eval)(content);
           }
         }
         return [];

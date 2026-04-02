@@ -17,13 +17,13 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsup src/cli/index.ts --watch --onSuccess 'node dist/cli/index.js'",
+    "dev": "tsup src/cli/bin.ts --watch --onSuccess 'node dist/cli/bin.js'",
     "build": "tsup src/index.ts src/cli/bin.ts --format esm --dts --clean && node scripts/copy-templates.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit",
-    "start": "node dist/cli/index.js"
+    "start": "node dist/cli/bin.js"
   },
   "dependencies": {
     "chalk": "^5.3.0",
