@@ -28,11 +28,13 @@ export class IconService {
 
     if (!bestPath) return null;
 
-    const fullPath = path.resolve(path.join(extensionRoot, bestPath));
-    // P0 Fix: Path traversal protection
-    if (!fullPath.startsWith(path.resolve(extensionRoot))) {
-      return null;
-    }
+    const resolvedRoot = path.resolve(extensionRoot);
+    const fullPath = path.resolve(path.join(resolvedRoot, bestPath));
+
+    // Robust path traversal protection: use path.relative
+    const rel = path.relative(resolvedRoot, fullPath);
+    const isOutside = rel.startsWith('..') || path.isAbsolute(rel);
+    if (isOutside) return null;
 
     if (!(await fs.pathExists(fullPath))) return null;
 
@@ -40,7 +42,6 @@ export class IconService {
       const buffer = await fs.readFile(fullPath);
       const ext = path.extname(bestPath).toLowerCase().replace('.', '');
 
-      // Robust MIME type detection
       const mimeMap: Record<string, string> = {
         svg: 'image/svg+xml',
         jpg: 'image/jpeg',
@@ -50,7 +51,7 @@ export class IconService {
         gif: 'image/gif',
         webp: 'image/webp',
       };
-      const mime = mimeMap[ext] || `image/${ext || 'png'}`;
+      const mime = mimeMap[ext] || 'image/png';
 
       return `data:${mime};base64,${buffer.toString('base64')}`;
     } catch (e) {

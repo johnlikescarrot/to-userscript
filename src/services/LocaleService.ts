@@ -16,7 +16,13 @@ export class LocaleService {
    * Loads the messages for a given locale from the extension's _locales directory.
    */
   static async loadMessages(extensionRoot: string, locale: string): Promise<ChromeLocaleMessageMap> {
-    const localePath = path.join(extensionRoot, '_locales', locale, 'messages.json');
+    // Sanitize locale to prevent path traversal
+    const sanitizedLocale = path.basename(locale);
+    if (sanitizedLocale !== locale || locale.includes('..')) {
+      return {};
+    }
+
+    const localePath = path.join(extensionRoot, '_locales', sanitizedLocale, 'messages.json');
     if (!(await fs.pathExists(localePath))) {
       return {};
     }
@@ -52,9 +58,10 @@ export class LocaleService {
     }
     if (typeof obj === 'object' && obj !== null) {
       const result: any = {};
-      for (const key of Object.keys(obj)) {
+      // Use Object.keys for safe iteration
+      Object.keys(obj).forEach(key => {
         result[key] = this.replaceInObject(obj[key], messages);
-      }
+      });
       return result;
     }
     return obj;

@@ -6,20 +6,21 @@ import {
 } from '../RegexUtils.js';
 
 describe('RegexUtils', () => {
-  it('should handle all convertMatchPatternToRegExpString paths', () => {
+  it('should cover all pattern branches', () => {
     expect(convertMatchPatternToRegExpString('http://')).toBe('$.');
-    expect(convertMatchPatternToRegExpString('https://*')).toBeDefined();
-    expect(convertMatchPatternToRegExpString('https://host/path*')).toContain('host/path');
-    expect(convertMatchPatternToRegExpString('https://*.host/')).toContain('host/');
+    expect(convertMatchPatternToRegExpString('')).toBe('$.');
+    expect(convertMatchPatternToRegExpString('http://host')).toContain('host');
+    expect(convertMatchPatternToRegExpString('*://*/*')).toBeDefined();
+    expect(convertMatchPatternToRegExpString('https://*.google.com/path*')).toContain('google');
   });
 
-  it('should handle error cases in convertMatchPatternToRegExp', () => {
-    expect(convertMatchPatternToRegExp('!!!').test('any')).toBe(false);
-    expect(convertMatchPatternToRegExp('<all_urls>').test('any')).toBe(true);
+  it('should handle regex errors', () => {
+    expect(convertMatchPatternToRegExp('!!!').test('a')).toBe(false);
+    expect(convertMatchPatternToRegExp('<all_urls>').test('a')).toBe(true);
   });
 
-  it('should handle all glob paths', () => {
-    expect(matchGlobPattern('**', 'any')).toBe(true);
+  it('should handle glob branches', () => {
+    expect(matchGlobPattern('**', 'a')).toBe(true);
     expect(matchGlobPattern('a', 'a')).toBe(true);
     expect(matchGlobPattern('[', 'a')).toBe(false);
     expect(matchGlobPattern('', 'a')).toBe(false);

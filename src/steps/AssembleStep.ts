@@ -32,14 +32,16 @@ export class AssembleStep extends Step {
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
     const grants = new Set<string>(['GM_info']);
-    const permissions = [...(manifest.raw.permissions || []), ...(manifest.raw.host_permissions || [])];
+    const permissions = manifest.raw.permissions || [];
+    const hostPermissions = manifest.raw.host_permissions || [];
 
+    // Standard permissions -> @grant
     for (const p of permissions) {
         const mapped = AssembleStep.PERMISSION_GRANT_MAP[p];
         if (mapped) mapped.forEach(g => grants.add(g));
     }
 
-    // Conditionally include storage grants only if used
+    // Always include storage for internal sync if userscript AND declared in manifest
     if (target === 'userscript' && permissions.includes('storage')) {
         AssembleStep.PERMISSION_GRANT_MAP['storage'].forEach(g => grants.add(g));
     }
@@ -50,7 +52,7 @@ export class AssembleStep extends Step {
         `// @namespace   to-userscript`,
         `// @version     ${manifest.version}`,
         `// @description ${(manifest.description || '').replace(/\n/g, ' ')}`,
-        `// @author      Converted by johnlikescarrot/to-userscript`,
+        `// @author      johnlikescarrot/to-userscript`,
     ];
 
     if (iconBase64) {
@@ -60,6 +62,9 @@ export class AssembleStep extends Step {
     const allMatches = new Set<string>();
     manifest.content_scripts.forEach(cs => cs.matches?.forEach(m => allMatches.add(m)));
     allMatches.forEach(m => metadataLines.push(`// @match       ${m}`));
+
+    // Host permissions -> @connect
+    hostPermissions.forEach(p => metadataLines.push(`// @connect     ${p}`));
 
     grants.forEach(g => metadataLines.push(`// @grant       ${g}`));
     metadataLines.push('// ==/UserScript==');
@@ -131,11 +136,9 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{USED_LOCALE}}': JSON.stringify(context.config.locale || 'en')
     });
 
-    // P1 Fix: Gate metadata to userscript target
-    const wrapper = `
-${target === 'userscript' ? metadataLines.join('\n') : ''}
+    const metadataPart = target === 'userscript' ? metadataLines.join('\n') + '\n\n' : '';
 
-(function() {
+    const wrapper = `${metadataPart}(function() {
     'use strict';
     const SCRIPT_NAME = ${JSON.stringify(manifest.name)};
     const _log = (...args) => console.log(\`[\${SCRIPT_NAME}]\`, ...args);
@@ -157,8 +160,7 @@ ${target === 'userscript' ? metadataLines.join('\n') : ''}
     ${finalScriptBody}
 
     main().catch(e => _error('Initialization error', e));
-})();
-`;
+})();`;
 
     await fs.outputFile(outputFile, wrapper);
   }

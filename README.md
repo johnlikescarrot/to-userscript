@@ -19,7 +19,7 @@ Most converters are fragile scripts. `to-userscript` is a **robust transformatio
 - **🛡️ Strictly Typed**: Powered by TypeScript and Zod for absolute manifest integrity (MV2 & MV3).
 - **⚙️ Step-Based Engine**: Atomic conversion lifecycle (Unpack → Parse → Localize → Process → Inline → Assemble).
 - **🔌 WebExtension Polyfill**: High-fidelity emulation of `chrome.*` APIs including Storage, Messaging, and Ports.
-- **🎨 Deep Asset Inlining**: Automatically transforms images, fonts, and CSS into embedded Data URLs.
+- **🎨 Deep Asset Inlining**: Recursively transforms images, fonts, and CSS into embedded Data URLs.
 - **🌍 Automated Localization**: Full support for `_locales/` message replacement.
 
 ---
@@ -55,6 +55,7 @@ to-userscript convert ./my-extension -o my-script.user.js
 ## 🛠️ CLI Commands
 
 ### `convert <source>`
+
 The primary command to transmute an extension into a portable userscript.
 
 **Sources:**
@@ -71,9 +72,11 @@ The primary command to transmute an extension into a portable userscript.
 - `--force`: Overwrite existing output.
 
 ### `download <source>`
+
 Download an extension archive from a web store without converting it.
 
 ### `require <userscript>`
+
 Generates a metadata block with a `@require` directive pointing to another userscript file.
 
 ---

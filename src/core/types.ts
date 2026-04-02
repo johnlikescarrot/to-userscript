@@ -1,5 +1,3 @@
-import { Manifest } from '../schemas/ManifestSchema.js';
-
 export interface AssetMap {
   [path: string]: string;
 }
@@ -27,6 +25,6 @@ export interface ConversionResult {
     cssFiles: number;
     backgroundScripts: number;
     outputSize: number;
-    assets: number; // Added assets count
+    assets: number;
   };
 }

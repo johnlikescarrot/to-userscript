@@ -14,8 +14,11 @@ function buildPolyfill({ isBackground = false } = {}) {
   }
 
   const _closeTab = () => {
-    if (typeof window.close === "function") window.close();
-    else _warn("Cannot close tab via standard APIs.");
+    if (typeof window.close === "function") {
+      window.close();
+    } else {
+      _warn("Cannot close tab: window.close() not available.");
+    }
   };
 
   return {
@@ -32,7 +35,11 @@ function buildPolyfill({ isBackground = false } = {}) {
     i18n: {
       getMessage: (key, subs = []) => {
         let msg = LOCALE_KEYS[key]?.message || key;
-        (Array.isArray(subs) ? subs : [subs]).forEach((s, i) => msg = msg.replace(\`$\${i+1}\`, s));
+        const subList = Array.isArray(subs) ? subs : [subs];
+        subList.forEach((s, i) => {
+          // Avoid ${} syntax to prevent build-time interpolation conflicts
+          msg = msg.replace('$' + (i + 1), s);
+        });
         return msg;
       },
       getUILanguage: () => USED_LOCALE || "en"
@@ -40,14 +47,40 @@ function buildPolyfill({ isBackground = false } = {}) {
     storage: {
       local: {
         get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
-        set: (i, cb) => { const keys = Object.keys(i); const p = _storageGet(keys).then(old => _storageSet(i).then(() => broadcastStorageChange(i, "local", old))); if (cb) p.then(cb); return p; },
-        remove: (k, cb) => { const p = _storageGet(k).then(old => _storageRemove(k).then(() => { const changes = {}; (Array.isArray(k) ? k : [k]).forEach(key => changes[key] = undefined); return broadcastStorageChange(changes, "local", old); })); if (cb) p.then(cb); return p; },
-        clear: (cb) => { const p = _storageGet(null).then(old => _storageClear().then(() => { const changes = {}; Object.keys(old).forEach(key => changes[key] = undefined); return broadcastStorageChange(changes, "local", old); })); if (cb) p.then(cb); return p; },
+        set: (i, cb) => {
+          const keys = Object.keys(i);
+          const p = _storageGet(keys).then(old => _storageSet(i).then(() => broadcastStorageChange(i, "local", old)));
+          if (cb) p.then(cb);
+          return p;
+        },
+        remove: (k, cb) => {
+          const p = _storageGet(k).then(old => _storageRemove(k).then(() => {
+            const changes = {};
+            (Array.isArray(k) ? k : [k]).forEach(key => changes[key] = undefined);
+            return broadcastStorageChange(changes, "local", old);
+          }));
+          if (cb) p.then(cb);
+          return p;
+        },
+        clear: (cb) => {
+          const p = _storageGet(null).then(old => _storageClear().then(() => {
+            const changes = {};
+            Object.keys(old).forEach(key => changes[key] = undefined);
+            return broadcastStorageChange(changes, "local", old);
+          }));
+          if (cb) p.then(cb);
+          return p;
+        },
         onChanged: { addListener: (l) => storageChangeListeners.add(l), removeListener: (l) => storageChangeListeners.delete(l) }
       },
       sync: {
         get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
-        set: (i, cb) => { const keys = Object.keys(i); const p = _storageGet(keys).then(old => _storageSet(i).then(() => broadcastStorageChange(i, "sync", old))); if (cb) p.then(cb); return p; }
+        set: (i, cb) => {
+          const keys = Object.keys(i);
+          const p = _storageGet(keys).then(old => _storageSet(i).then(() => broadcastStorageChange(i, "sync", old)));
+          if (cb) p.then(cb);
+          return p;
+        }
       },
       onChanged: {
         addListener: (l) => storageChangeListeners.add(l),
@@ -57,9 +90,9 @@ function buildPolyfill({ isBackground = false } = {}) {
     tabs: {
       create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
-      // Single-tab polyfill: id is ignored and always maps to current tab (id=1)
+      /** Single-tab polyfill: id is ignored, maps to primary tab (id=1) */
       get: (id) => Promise.resolve({ id: 1, url: CURRENT_LOCATION, active: true }),
-      // Single-tab polyfill: id is ignored and always maps to current tab (id=1)
+      /** Single-tab polyfill: id is ignored, maps to primary tab (id=1) */
       update: (id, props) => {
         if (props.url) {
             if (id === 1) window.location.href = props.url;
@@ -67,7 +100,7 @@ function buildPolyfill({ isBackground = false } = {}) {
         }
         return Promise.resolve({ id: 1, url: props.url || CURRENT_LOCATION, active: true });
       },
-      // Single-tab polyfill: id is ignored and always maps to current tab (id=1)
+      /** Single-tab polyfill: id is ignored, maps to primary tab (id=1) */
       remove: (id) => {
         if (id === 1) _closeTab();
         return Promise.resolve();

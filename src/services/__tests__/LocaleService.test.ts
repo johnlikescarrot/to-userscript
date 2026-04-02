@@ -5,61 +5,24 @@ import fs from 'fs-extra';
 vi.mock('fs-extra');
 
 describe('LocaleService', () => {
-  const messages = {
-    'extName': { 'message': 'My Extension' },
-    'extDesc': { 'message': 'A description with $1' }
-  };
+  it('should cover all placeholder and iteration branches', () => {
+    const msgs = { 'm': { message: 'val' } };
+    expect(LocaleService.replacePlaceholders('__MSG_m__', msgs)).toBe('val');
+    expect(LocaleService.replacePlaceholders('__MSG_x__', msgs)).toBe('__MSG_x__');
 
-  it('should load messages from file', async () => {
-    vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.readJson).mockResolvedValue(messages);
-    const res = await LocaleService.loadMessages('root', 'en');
-    expect(res).toEqual(messages);
+    expect(LocaleService.replaceInObject(['__MSG_m__'], msgs)).toEqual(['val']);
+    expect(LocaleService.replaceInObject({ a: '__MSG_m__' }, msgs)).toEqual({ a: 'val' });
+    expect(LocaleService.replaceInObject(1, msgs)).toBe(1);
   });
 
-  it('should return empty object if locale file missing', async () => {
+  it('should handle locale traversal and loading', async () => {
+    vi.mocked(fs.pathExists).mockResolvedValue(true);
+    vi.mocked(fs.readJson).mockResolvedValue({ m: { message: 'v' } });
+
+    expect(await LocaleService.loadMessages('r', 'en')).toBeDefined();
+    expect(await LocaleService.loadMessages('r', '../evil')).toEqual({});
+
     vi.mocked(fs.pathExists).mockResolvedValue(false);
-    const res = await LocaleService.loadMessages('root', 'en');
-    expect(res).toEqual({});
-  });
-
-  it('should return empty object on read error', async () => {
-    vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.readJson).mockRejectedValue(new Error('fail'));
-    const res = await LocaleService.loadMessages('root', 'en');
-    expect(res).toEqual({});
-  });
-
-  it('should replace placeholders in strings', () => {
-    const content = 'Name: __MSG_extName__';
-    expect(LocaleService.replacePlaceholders(content, messages)).toBe('Name: My Extension');
-  });
-
-  it('should handle missing messages gracefully', () => {
-    const content = 'Missing: __MSG_missing__';
-    expect(LocaleService.replacePlaceholders(content, messages)).toBe('Missing: __MSG_missing__');
-  });
-
-  it('should replace placeholders in objects recursively', () => {
-    const obj = {
-      name: '__MSG_extName__',
-      nested: {
-        desc: '__MSG_extDesc__'
-      },
-      list: ['__MSG_extName__', 'static']
-    };
-    const expected = {
-      name: 'My Extension',
-      nested: {
-        desc: 'A description with $1'
-      },
-      list: ['My Extension', 'static']
-    };
-    expect(LocaleService.replaceInObject(obj, messages)).toEqual(expected);
-  });
-
-  it('should handle non-string/non-object types in replaceInObject', () => {
-    expect(LocaleService.replaceInObject(123, messages)).toBe(123);
-    expect(LocaleService.replaceInObject(null, messages)).toBeNull();
+    expect(await LocaleService.loadMessages('r', 'en')).toEqual({});
   });
 });

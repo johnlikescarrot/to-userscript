@@ -16,7 +16,7 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   const hostMatch = remaining.match(/^([^\/]+)/);
   if (!hostMatch) return '$.';
   const host = hostMatch[1];
-  const pathPart = remaining.substring(host.length);
+  let pathPart = remaining.substring(host.length);
 
   let hostRegex: string;
   if (host === '*') {
@@ -27,11 +27,14 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
     hostRegex = escapeRegex(host);
   }
 
-  let pathRegex = pathPart;
-  if (!pathRegex.startsWith('/')) {
-    pathRegex = '/' + pathRegex;
+  if (!pathPart) {
+    pathPart = '/';
   }
-  pathRegex = pathRegex.split('*').map(escapeRegex).join('.*');
+  if (!pathPart.startsWith('/')) {
+    pathPart = '/' + pathPart;
+  }
+
+  let pathRegex = pathPart.split('*').map(escapeRegex).join('.*');
 
   if (pathRegex === '/.*') {
     pathRegex = '(?:/.*)?';
@@ -47,8 +50,8 @@ export function convertMatchPatternToRegExp(pattern: string): RegExp {
     return new RegExp('.*');
   }
   try {
-    const singleEscapedPattern = convertMatchPatternToRegExpString(pattern).replace(/\\\\/g, '\\');
-    return new RegExp(singleEscapedPattern);
+    const res = convertMatchPatternToRegExpString(pattern);
+    return new RegExp(res);
   } catch {
     return new RegExp('$.');
   }

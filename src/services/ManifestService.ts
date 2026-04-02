@@ -18,8 +18,12 @@ export class ManifestService {
 
     // 2. Localization
     if (targetLocale) {
-      const messages = await LocaleService.loadMessages(extensionRoot, targetLocale);
-      raw = LocaleService.replaceInObject(raw, messages);
+      try {
+        const messages = await LocaleService.loadMessages(extensionRoot, targetLocale);
+        raw = LocaleService.replaceInObject(raw, messages);
+      } catch (e) {
+        // Fallback to original if localization fails
+      }
     }
 
     // 3. Schema Validation
@@ -64,7 +68,6 @@ export class ManifestService {
       // Robust MV3 resource flattening
       normalized.web_accessible_resources = (parsed.web_accessible_resources || [])
         .flatMap(entry => {
-          // P3: Branch simplified - schema validation ensures objects in MV3
           return entry.resources || [];
         })
         .map(normalizePath);

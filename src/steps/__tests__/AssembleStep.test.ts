@@ -6,56 +6,50 @@ import fs from 'fs-extra';
 vi.mock('fs-extra');
 vi.mock('../../services/PolyfillService.js');
 vi.mock('../../services/IconService.js', () => ({
-    IconService: { getBestIconBase64: vi.fn().mockResolvedValue('base64icon') }
+    IconService: { getBestIconBase64: vi.fn().mockResolvedValue('icon') }
 }));
 vi.mock('../../services/TemplateService.js', () => ({
   TemplateService: {
     load: vi.fn().mockResolvedValue('{{COMBINED_EXECUTION_LOGIC}}'),
-    replace: vi.fn().mockImplementation((t, r) => t) // Return template as is for simplicity in this test
+    // Real-ish implementation for replacement in tests
+    replace: vi.fn().mockImplementation((template, replacements) => {
+        let res = template;
+        for (const [k, v] of Object.entries(replacements)) {
+            res = res.replace(k, v as string);
+        }
+        return res;
+    })
   }
 }));
 
 describe('AssembleStep', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it('should assemble the userscript with grants', async () => {
+  it('should handle all grant and resource branches', async () => {
     const ctx = new ConversionContext({ inputDir: '.', outputFile: 'out.js', target: 'userscript' });
     ctx.set('manifest', {
-      name: 'test', version: '1.0.0', description: 'desc',
-      raw: { permissions: ['storage'] },
-      content_scripts: [], icons: {}, action: {}, background_scripts: []
+        name: 't', version: '1', description: 'd\nn',
+        raw: { permissions: ['storage', 'notifications'], host_permissions: ['https://*/*'] },
+        content_scripts: [{ matches: ['*://*/*'], js: ['c.js'], run_at: 'document_start' }],
+        icons: {}, action: {}, background_scripts: []
     });
     ctx.set('assetMap', {});
-    ctx.set('resources', { jsContents: {}, cssContents: {} });
+    ctx.set('resources', { jsContents: { 'c.js': 'EXPECTED_CODE_STRING' }, cssContents: {} });
 
-    const step = new AssembleStep();
-    await step.execute(ctx);
-
-    const call = vi.mocked(fs.outputFile).mock.calls[0];
-    const content = call[1] as string;
-    expect(content).toContain('// ==UserScript==');
-    expect(content).toContain('// @grant       GM_setValue');
+    await new AssembleStep().execute(ctx);
+    const content = vi.mocked(fs.outputFile).mock.calls[0][1] as string;
+    expect(content).toContain('@grant       GM_setValue');
+    expect(content).toContain('@grant       GM_notification');
+    expect(content).toContain('@connect     https://*/*');
+    expect(content).toContain('EXPECTED_CODE_STRING');
   });
 
-  it('should assemble the vanilla script without metadata and grants', async () => {
+  it('should handle vanilla target', async () => {
     const ctx = new ConversionContext({ inputDir: '.', outputFile: 'out.js', target: 'vanilla' });
-    ctx.set('manifest', {
-      name: 'test', version: '1.0.0', description: 'desc',
-      raw: { permissions: ['storage'] },
-      content_scripts: [], icons: {}, action: {}, background_scripts: []
-    });
+    ctx.set('manifest', { name: 't', version: '1', description: '', raw: {}, content_scripts: [], icons: {}, action: {}, background_scripts: [] });
     ctx.set('assetMap', {});
     ctx.set('resources', { jsContents: {}, cssContents: {} });
-
-    const step = new AssembleStep();
-    await step.execute(ctx);
-
-    const call = vi.mocked(fs.outputFile).mock.calls[0];
-    const content = call[1] as string;
-    expect(content).not.toContain('// ==UserScript==');
-    expect(content).not.toContain('// @grant');
-    expect(content).toContain('use strict');
+    await new AssembleStep().execute(ctx);
+    expect(vi.mocked(fs.outputFile).mock.calls[0][1]).not.toContain('// ==UserScript==');
   });
 });

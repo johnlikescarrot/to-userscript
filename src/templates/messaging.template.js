@@ -32,7 +32,7 @@ function createEventBus(scopeId, type = "page") {
       if (to) {
         to.postMessage(envelope, "*");
       } else {
-        // Broadcast
+        // Broadcast locally and to peers
         (handlers[event] || []).forEach(fn => fn(payload, { source: window }));
         if (type === "page") children.forEach(c => c.postMessage(envelope, "*"));
         else window.parent.postMessage(envelope, "*");
@@ -42,7 +42,7 @@ function createEventBus(scopeId, type = "page") {
 }
 
 function createRuntime(type, bus) {
-  let nextId = 1;
+  let nextIdCounter = 1;
   const pending = {};
   const listeners = [];
   const connectListeners = [];
@@ -54,8 +54,7 @@ function createRuntime(type, bus) {
 
     const msgHandler = (payload, meta) => {
       if (payload.portId !== portId) return;
-      // Loopback protection: Initiator ports created with source=null take broadcast path.
-      // We must ignore our own messages emitted locally.
+      // Loopback protection: sender (source=null) shouldn't receive its own broadcast from local window
       if (source === null && meta.source === window) return;
       onMessageListeners.forEach(fn => fn(payload.message, port));
     };
@@ -92,6 +91,7 @@ function createRuntime(type, bus) {
       disconnect: () => {
         if (disconnected) return;
         disconnected = true;
+        // Local cleanup
         bus.off("__PORT_MSG__", msgHandler);
         bus.off("__PORT_DISCONNECT__", disconnectHandler);
         bus.emit("__PORT_DISCONNECT__", { portId }, { to: source });
@@ -154,7 +154,7 @@ function createRuntime(type, bus) {
   function sendMessage(...args) {
     const message = args[0];
     const callback = typeof args[args.length - 1] === "function" ? args.pop() : null;
-    const id = nextId++;
+    const id = nextIdCounter++;
     return new Promise((resolve) => {
       pending[id] = { resolve, callback };
       bus.emit("__REQUEST__", { id, message });
@@ -162,7 +162,8 @@ function createRuntime(type, bus) {
   }
 
   function connect(info = {}) {
-    const portId = Math.random().toString(36).substring(7);
+    // Robust portId: counter + longer random segment
+    const portId = (nextIdCounter++) + "_" + Math.random().toString(36).substring(2, 9);
     const name = info.name || "";
     bus.emit("__CONNECT__", { portId, name });
     return createPort(portId, name, null);

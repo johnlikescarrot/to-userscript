@@ -24,7 +24,7 @@ function _createAssetUrl(path = "") {
 
   const ext = (path.split(".").pop() || "").toLowerCase();
   const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
-  const mime = "application/octet-stream"; // Simplified helper
+  const mime = "application/octet-stream";
 
   if (isText) return URL.createObjectURL(new Blob([assetData], { type: "text/plain" }));
   return URL.createObjectURL(_base64ToBlob(assetData, mime));
@@ -41,9 +41,19 @@ async function main() {
   let matched = false;
 
   for (const config of CONTENT_SCRIPT_CONFIGS_FOR_MATCHING) {
-    if (config.matches && config.matches.some(p => convertMatchPatternToRegExp(p).test(currentUrl))) { // Simplified matching
-      matched = true;
-      break;
+    if (config.matches) {
+        const matchesAny = config.matches.some(pattern => {
+            try {
+                return convertMatchPatternToRegExp(pattern).test(currentUrl);
+            } catch (e) {
+                _warn("Invalid match pattern detected:", pattern);
+                return false;
+            }
+        });
+        if (matchesAny) {
+            matched = true;
+            break;
+        }
     }
   }
 
