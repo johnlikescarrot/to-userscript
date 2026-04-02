@@ -22,6 +22,11 @@ function createEventBus(scopeId, type = "page") {
 
   return {
     on(event, fn) { handlers[event] = handlers[event] || []; handlers[event].push(fn); },
+    off(event, fn) {
+        if (!handlers[event]) return;
+        const index = handlers[event].indexOf(fn);
+        if (index >= 0) handlers[event].splice(index, 1);
+    },
     emit(event, payload, { to } = {}) {
       const envelope = { __eventBus: true, scopeId, event, payload };
       if (to) {
@@ -40,6 +45,61 @@ function createRuntime(type, bus) {
   let nextId = 1;
   const pending = {};
   const listeners = [];
+  const connectListeners = [];
+
+  function createPort(portId, name, source) {
+    const onMessageListeners = [];
+    const onDisconnectListeners = [];
+    let disconnected = false;
+
+    const port = {
+      name,
+      onMessage: {
+        addListener: (fn) => onMessageListeners.push(fn),
+        removeListener: (fn) => {
+          const i = onMessageListeners.indexOf(fn);
+          if (i >= 0) onMessageListeners.splice(i, 1);
+        }
+      },
+      onDisconnect: {
+        addListener: (fn) => onDisconnectListeners.push(fn),
+        removeListener: (fn) => {
+          const i = onDisconnectListeners.indexOf(fn);
+          if (i >= 0) onDisconnectListeners.splice(i, 1);
+        }
+      },
+      postMessage: (msg) => {
+        if (disconnected) throw new Error("Attempt to use a closed port.");
+        bus.emit("__PORT_MSG__", { portId, message: msg }, { to: source });
+      },
+      disconnect: () => {
+        if (disconnected) return;
+        disconnected = true;
+        bus.emit("__PORT_DISCONNECT__", { portId }, { to: source });
+        onDisconnectListeners.forEach(fn => fn(port));
+      }
+    };
+
+    const msgHandler = (payload, meta) => {
+      if (payload.portId === portId) {
+        onMessageListeners.forEach(fn => fn(payload.message, port));
+      }
+    };
+
+    const disconnectHandler = (payload) => {
+      if (payload.portId === portId && !disconnected) {
+        disconnected = true;
+        bus.off("__PORT_MSG__", msgHandler);
+        bus.off("__PORT_DISCONNECT__", disconnectHandler);
+        onDisconnectListeners.forEach(fn => fn(port));
+      }
+    };
+
+    bus.on("__PORT_MSG__", msgHandler);
+    bus.on("__PORT_DISCONNECT__", disconnectHandler);
+
+    return port;
+  }
 
   if (type === "background") {
     bus.on("__REQUEST__", ({ id, message }, { source }) => {
@@ -50,7 +110,6 @@ function createRuntime(type, bus) {
         bus.emit("__RESPONSE__", { id, response: resp }, { to: source });
       }
 
-      // P1: Wrapped in try-catch and added async Promise detection
       listeners.forEach(fn => {
         try {
           const ret = fn(message, { tab: { id: source } }, sendResponse);
@@ -69,6 +128,11 @@ function createRuntime(type, bus) {
       });
 
       if (!isAsync && !responded) sendResponse(undefined);
+    });
+
+    bus.on("__CONNECT__", ({ portId, name }, { source }) => {
+        const port = createPort(portId, name, source);
+        connectListeners.forEach(fn => fn(port));
     });
   }
 
@@ -93,8 +157,17 @@ function createRuntime(type, bus) {
     });
   }
 
+  function connect(info = {}) {
+    const portId = Math.random().toString(36).substring(7);
+    const name = info.name || "";
+    // Connect always goes to background in this polyfill
+    bus.emit("__CONNECT__", { portId, name });
+    return createPort(portId, name, null); // null 'to' means broadcast/parent which background listens to
+  }
+
   return {
     sendMessage,
+    connect,
     onMessage: {
       addListener(fn) { listeners.push(fn); },
       removeListener(fn) {
@@ -102,11 +175,12 @@ function createRuntime(type, bus) {
         if (i >= 0) listeners.splice(i, 1);
       }
     },
-    connect(info = {}) {
-      return {
-        name: info.name, onMessage: { addListener: () => {} },
-        onDisconnect: { addListener: () => {} }, postMessage: () => {}, disconnect: () => {}
-      };
+    onConnect: {
+        addListener(fn) { connectListeners.push(fn); },
+        removeListener(fn) {
+            const i = connectListeners.indexOf(fn);
+            if (i >= 0) connectListeners.splice(i, 1);
+        }
     }
   };
 }

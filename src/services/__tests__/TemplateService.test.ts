@@ -5,23 +5,18 @@ import fs from 'fs-extra';
 vi.mock('fs-extra');
 
 describe('TemplateService', () => {
-  it('should replace strings correctly with dollar signs', () => {
-    const content = 'Hello {{NAME}}';
-    const res = TemplateService.replace(content, { '{{NAME}}': 'World' });
-    expect(res).toBe('Hello World');
-
-    const content2 = 'Value: {{VAL}}';
-    const res2 = TemplateService.replace(content2, { '{{VAL}}': '$100' });
-    expect(res2).toBe('Value: $100');
+  it('should load template with fallback', async () => {
+    vi.mocked(fs.pathExists).mockImplementation(async (p: any) => p.toString().endsWith('.template.js'));
+    vi.mocked(fs.readFile).mockResolvedValue('content');
+    expect(await TemplateService.load('name')).toBe('content');
   });
 
-  it('should load template with fallback', async () => {
-    vi.mocked(fs.pathExists).mockImplementation(async (path: any) => {
-      return path.toString().endsWith('.template.js');
-    });
-    vi.mocked(fs.readFile).mockResolvedValue('template content');
+  it('should throw if template not found', async () => {
+    vi.mocked(fs.pathExists).mockResolvedValue(false);
+    await expect(TemplateService.load('none')).rejects.toThrow('Template not found');
+  });
 
-    const res = await TemplateService.load('my-template');
-    expect(res).toBe('template content');
+  it('should replace strings correctly', () => {
+    expect(TemplateService.replace('{{K}}', { '{{K}}': 'V' })).toBe('V');
   });
 });

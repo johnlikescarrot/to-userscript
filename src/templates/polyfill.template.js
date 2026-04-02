@@ -3,16 +3,21 @@ function buildPolyfill({ isBackground = false } = {}) {
   const RUNTIME = createRuntime(isBackground ? "background" : "tab", BUS);
 
   const storageChangeListeners = new Set();
-  function broadcastStorageChange(changes, areaName) {
-    // P2: Build proper change records { newValue }
+  async function broadcastStorageChange(changes, areaName, oldValues = {}) {
     const changeRecords = {};
     for (const [key, newValue] of Object.entries(changes)) {
-        changeRecords[key] = { newValue };
+        changeRecords[key] = { oldValue: oldValues[key], newValue };
     }
     storageChangeListeners.forEach((listener) => {
       try { listener(changeRecords, areaName); } catch(e) {}
     });
   }
+
+  const _closeTab = () => {
+    if (typeof window.close === "function") window.close();
+    else if (typeof GM_close === "function") GM_close();
+    else _warn("Cannot close tab via standard APIs.");
+  };
 
   return {
     runtime: {
@@ -36,14 +41,14 @@ function buildPolyfill({ isBackground = false } = {}) {
     storage: {
       local: {
         get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
-        set: (i, cb) => { const p = _storageSet(i).then(() => broadcastStorageChange(i, "local")); if (cb) p.then(cb); return p; },
-        remove: (k, cb) => { const p = _storageRemove(k).then(() => broadcastStorageChange({}, "local")); if (cb) p.then(cb); return p; },
-        clear: (cb) => { const p = _storageClear().then(() => broadcastStorageChange({}, "local")); if (cb) p.then(cb); return p; },
+        set: (i, cb) => { const keys = Object.keys(i); const p = _storageGet(keys).then(old => _storageSet(i).then(() => broadcastStorageChange(i, "local", old))); if (cb) p.then(cb); return p; },
+        remove: (k, cb) => { const p = _storageGet(k).then(old => _storageRemove(k).then(() => { const changes = {}; (Array.isArray(k) ? k : [k]).forEach(key => changes[key] = undefined); return broadcastStorageChange(changes, "local", old); })); if (cb) p.then(cb); return p; },
+        clear: (cb) => { const p = _storageGet(null).then(old => _storageClear().then(() => { const changes = {}; Object.keys(old).forEach(key => changes[key] = undefined); return broadcastStorageChange(changes, "local", old); })); if (cb) p.then(cb); return p; },
         onChanged: { addListener: (l) => storageChangeListeners.add(l), removeListener: (l) => storageChangeListeners.delete(l) }
       },
       sync: {
         get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
-        set: (i, cb) => { const p = _storageSet(i).then(() => broadcastStorageChange(i, "sync")); if (cb) p.then(cb); return p; }
+        set: (i, cb) => { const keys = Object.keys(i); const p = _storageGet(keys).then(old => _storageSet(i).then(() => broadcastStorageChange(i, "sync", old))); if (cb) p.then(cb); return p; }
       },
       onChanged: {
         addListener: (l) => storageChangeListeners.add(l),
@@ -53,6 +58,18 @@ function buildPolyfill({ isBackground = false } = {}) {
     tabs: {
       create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
+      get: (id) => Promise.resolve({ id: 1, url: CURRENT_LOCATION, active: true }),
+      update: (id, props) => {
+        if (props.url) {
+            if (id === 1) window.location.href = props.url;
+            else _openTab(props.url, props.active !== false);
+        }
+        return Promise.resolve({ id: 1, url: props.url || CURRENT_LOCATION, active: true });
+      },
+      remove: (id) => {
+        if (id === 1) _closeTab();
+        return Promise.resolve();
+      },
       sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
     },
     cookies: {
@@ -63,11 +80,27 @@ function buildPolyfill({ isBackground = false } = {}) {
     },
     notifications: {
       create: (arg1, arg2, cb) => {
-        const id = typeof arg1 === 'string' ? arg1 : Math.random().toString();
-        const opts = typeof arg1 === 'object' ? arg1 : arg2;
-        const callback = typeof arg2 === 'function' ? arg2 : cb;
-        if (Notification.permission === "granted") new Notification(opts.title, { body: opts.message });
-        if (callback) callback(id);
+        const id = typeof arg1 === "string" ? arg1 : Math.random().toString();
+        const opts = typeof arg1 === "object" ? arg1 : arg2;
+        const callback = typeof arg2 === "function" ? arg2 : cb;
+
+        const details = {
+          text: opts.message,
+          title: opts.title,
+          image: opts.iconUrl,
+          onclick: opts.onclick,
+          ondone: () => { if (callback) callback(id); }
+        };
+
+        if (typeof GM_notification === "function") {
+          GM_notification(details);
+        } else if (Notification.permission === "granted") {
+          new Notification(opts.title, { body: opts.message, icon: opts.iconUrl });
+          if (callback) callback(id);
+        } else {
+          _warn("Notifications not supported or permission denied.");
+          if (callback) callback(id);
+        }
         return Promise.resolve(id);
       }
     },
