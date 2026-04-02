@@ -16,7 +16,7 @@ export class ConversionContext {
   public state: Record<string, any> = {};
 
   constructor(public readonly config: ConversionConfig) {
-    this.logger = new Logger(config.target);
+    this.logger = new Logger();
   }
 
   set<T>(key: string, value: T): void {

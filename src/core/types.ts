@@ -1,7 +1,7 @@
-import { Manifest } from '@/schemas/ManifestSchema';
+import { Manifest } from '../schemas/ManifestSchema.js';
 
 export interface AssetMap {
-  [path: string]: string; // Path relative to extension root -> Content (base64 or text)
+  [path: string]: string;
 }
 
 export interface ScriptContents {
@@ -27,5 +27,6 @@ export interface ConversionResult {
     cssFiles: number;
     backgroundScripts: number;
     outputSize: number;
+    assets: number; // Added assets count
   };
 }

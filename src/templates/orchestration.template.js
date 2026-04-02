@@ -41,7 +41,7 @@ async function main() {
   let matched = false;
 
   for (const config of CONTENT_SCRIPT_CONFIGS_FOR_MATCHING) {
-    if (config.matches && config.matches.some(p => currentUrl.includes(p))) { // Simplified matching
+    if (config.matches && config.matches.some(p => convertMatchPatternToRegExp(p).test(currentUrl))) { // Simplified matching
       matched = true;
       break;
     }

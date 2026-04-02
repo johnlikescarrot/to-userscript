@@ -4,7 +4,7 @@ import ora, { Ora } from 'ora';
 export class Logger {
   private spinner: Ora | null = null;
 
-  constructor(private context: string) {}
+  constructor() {}
 
   info(message: string): void {
     console.log(chalk.cyan(`[info] `) + chalk.dim(message));

@@ -88,7 +88,6 @@ const parser = yargs(hideBin(process.argv))
     async (argv) => {
       const filePath = path.resolve(argv.userscript as string);
       const fileUrl = pathToFileURL(filePath).href;
-      console.log(chalk.blue.bold('\n📋 Requirement Block Generated:'));
       console.log(chalk.gray('// ==UserScript=='));
       console.log(chalk.gray(`// @name        Requirement`));
       console.log(chalk.cyan(`// @require     ${fileUrl}`));

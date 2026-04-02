@@ -5,18 +5,18 @@ import fs from 'fs-extra';
 vi.mock('fs-extra');
 
 describe('TemplateService', () => {
-  it('should load template with fallback', async () => {
+  it('should load template with .template.js fallback', async () => {
     vi.mocked(fs.pathExists).mockImplementation(async (p: any) => p.toString().endsWith('.template.js'));
-    vi.mocked(fs.readFile).mockResolvedValue('content');
-    expect(await TemplateService.load('name')).toBe('content');
+    vi.mocked(fs.readFile).mockResolvedValue('template_content');
+    expect(await TemplateService.load('my_template')).toBe('template_content');
   });
 
-  it('should throw if template not found', async () => {
+  it('should throw if no template or fallback exists', async () => {
     vi.mocked(fs.pathExists).mockResolvedValue(false);
     await expect(TemplateService.load('none')).rejects.toThrow('Template not found');
   });
 
-  it('should replace strings correctly', () => {
-    expect(TemplateService.replace('{{K}}', { '{{K}}': 'V' })).toBe('V');
+  it('should replace and escape dollar signs', () => {
+    expect(TemplateService.replace('{{K}}', { '{{K}}': '$' })).toBe('$');
   });
 });

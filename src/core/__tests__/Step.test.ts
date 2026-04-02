@@ -8,9 +8,11 @@ class FailStep extends Step {
 }
 
 describe('Step', () => {
-  it('should log failure on error', async () => {
+  it('should log failure and stop spinner on error', async () => {
     const ctx = new ConversionContext({ inputDir: '.', outputFile: '.', target: 'userscript' });
+    const spy = vi.spyOn(ctx.logger, 'stopSpinner');
     const step = new FailStep();
     await expect(step.execute(ctx)).rejects.toThrow('step failed');
+    expect(spy).toHaveBeenCalledWith(false, 'Failed Fail');
   });
 });

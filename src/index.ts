@@ -7,9 +7,9 @@ import { AssembleStep } from './steps/AssembleStep.js';
 import { UnpackService } from './services/UnpackService.js';
 import { NormalizedManifest } from './schemas/ManifestSchema.js';
 import fs from 'fs-extra';
-import { ResourceResult } from './core/types.js';
+import { ResourceResult, ConversionResult } from './core/types.js';
 
-export async function convertExtension(config: ConversionConfig) {
+export async function convertExtension(config: ConversionConfig): Promise<ConversionResult> {
   let inputDir = config.inputDir;
   let isTempDir = false;
 
@@ -35,10 +35,12 @@ export async function convertExtension(config: ConversionConfig) {
 
     const manifest = context.get<NormalizedManifest>('manifest');
     const resources = context.get<ResourceResult>('resources');
+    const assetMap = context.get<Record<string, string>>('assetMap');
 
     return {
       success: true,
       outputFile: config.outputFile,
+      target: config.target,
       extension: {
           name: manifest.name,
           version: manifest.version,
@@ -47,11 +49,12 @@ export async function convertExtension(config: ConversionConfig) {
       stats: {
           jsFiles: Object.keys(resources.jsContents).length,
           cssFiles: Object.keys(resources.cssContents).length,
-          assets: Object.keys(context.get('assetMap')).length
+          backgroundScripts: manifest.background_scripts.length,
+          assets: Object.keys(assetMap).length,
+          outputSize: (await fs.stat(config.outputFile)).size
       }
     };
   } finally {
-    // P2: Cleanup unpacked temp directory
     if (isTempDir && inputDir) {
       await fs.remove(inputDir).catch(() => {});
     }

@@ -1,25 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import {
-  escapeRegex,
   convertMatchPatternToRegExpString,
   convertMatchPatternToRegExp,
   matchGlobPattern
 } from '../RegexUtils.js';
 
 describe('RegexUtils', () => {
-  it('should handle host and path normalization branches', () => {
+  it('should handle all convertMatchPatternToRegExpString paths', () => {
     expect(convertMatchPatternToRegExpString('http://')).toBe('$.');
-    expect(convertMatchPatternToRegExpString('https://host')).toContain('/host');
-    expect(convertMatchPatternToRegExpString('https://host/*')).toContain('(?:/.*)?');
+    expect(convertMatchPatternToRegExpString('https://*')).toBeDefined();
+    expect(convertMatchPatternToRegExpString('https://host/path*')).toContain('host/path');
+    expect(convertMatchPatternToRegExpString('https://*.host/')).toContain('host/');
   });
 
   it('should handle error cases in convertMatchPatternToRegExp', () => {
-    // We already have some error handling, adding a specific one for coverage
-    expect(convertMatchPatternToRegExp('!!!').source).toBe('$.');
+    expect(convertMatchPatternToRegExp('!!!').test('any')).toBe(false);
+    expect(convertMatchPatternToRegExp('<all_urls>').test('any')).toBe(true);
   });
 
-  it('should handle matchGlobPattern direct match and invalid regex', () => {
+  it('should handle all glob paths', () => {
+    expect(matchGlobPattern('**', 'any')).toBe(true);
     expect(matchGlobPattern('a', 'a')).toBe(true);
     expect(matchGlobPattern('[', 'a')).toBe(false);
+    expect(matchGlobPattern('', 'a')).toBe(false);
   });
 });

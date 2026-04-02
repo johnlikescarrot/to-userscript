@@ -19,7 +19,7 @@ describe('Logger', () => {
   };
 
   beforeEach(() => {
-    logger = new Logger('test');
+    logger = new Logger();
     vi.clearAllMocks();
   });
 

@@ -52,6 +52,23 @@ function createRuntime(type, bus) {
     const onDisconnectListeners = [];
     let disconnected = false;
 
+    const msgHandler = (payload, meta) => {
+      if (payload.portId !== portId) return;
+      // Loopback protection: Initiator ports created with source=null take broadcast path.
+      // We must ignore our own messages emitted locally.
+      if (source === null && meta.source === window) return;
+      onMessageListeners.forEach(fn => fn(payload.message, port));
+    };
+
+    const disconnectHandler = (payload) => {
+      if (payload.portId === portId && !disconnected) {
+        disconnected = true;
+        bus.off("__PORT_MSG__", msgHandler);
+        bus.off("__PORT_DISCONNECT__", disconnectHandler);
+        onDisconnectListeners.forEach(fn => fn(port));
+      }
+    };
+
     const port = {
       name,
       onMessage: {
@@ -75,22 +92,9 @@ function createRuntime(type, bus) {
       disconnect: () => {
         if (disconnected) return;
         disconnected = true;
-        bus.emit("__PORT_DISCONNECT__", { portId }, { to: source });
-        onDisconnectListeners.forEach(fn => fn(port));
-      }
-    };
-
-    const msgHandler = (payload, meta) => {
-      if (payload.portId === portId) {
-        onMessageListeners.forEach(fn => fn(payload.message, port));
-      }
-    };
-
-    const disconnectHandler = (payload) => {
-      if (payload.portId === portId && !disconnected) {
-        disconnected = true;
         bus.off("__PORT_MSG__", msgHandler);
         bus.off("__PORT_DISCONNECT__", disconnectHandler);
+        bus.emit("__PORT_DISCONNECT__", { portId }, { to: source });
         onDisconnectListeners.forEach(fn => fn(port));
       }
     };
@@ -160,9 +164,8 @@ function createRuntime(type, bus) {
   function connect(info = {}) {
     const portId = Math.random().toString(36).substring(7);
     const name = info.name || "";
-    // Connect always goes to background in this polyfill
     bus.emit("__CONNECT__", { portId, name });
-    return createPort(portId, name, null); // null 'to' means broadcast/parent which background listens to
+    return createPort(portId, name, null);
   }
 
   return {

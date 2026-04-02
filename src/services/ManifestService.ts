@@ -10,7 +10,7 @@ export class ManifestService {
    */
   static async load(manifestPath: string, locale?: string): Promise<NormalizedManifest> {
     const extensionRoot = path.dirname(manifestPath);
-    let content = await fs.readFile(manifestPath, 'utf-8');
+    const content = await fs.readFile(manifestPath, 'utf-8');
 
     // 1. Initial Parse to get default_locale if needed
     let raw = JSON.parse(content);
@@ -64,7 +64,7 @@ export class ManifestService {
       // Robust MV3 resource flattening
       normalized.web_accessible_resources = (parsed.web_accessible_resources || [])
         .flatMap(entry => {
-          if (typeof entry === 'string') return [entry];
+          // P3: Branch simplified - schema validation ensures objects in MV3
           return entry.resources || [];
         })
         .map(normalizePath);

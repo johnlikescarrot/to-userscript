@@ -13,7 +13,6 @@ export class IconService {
     if (typeof icons === 'string') {
       bestPath = icons;
     } else {
-      // Pick the largest numeric key
       const sizes = Object.keys(icons)
         .map(s => parseInt(s, 10))
         .filter(s => !isNaN(s))
@@ -22,7 +21,6 @@ export class IconService {
       if (sizes.length > 0) {
         bestPath = icons[sizes[0].toString()];
       } else {
-        // Fallback to the first available key if none are numeric
         const keys = Object.keys(icons);
         if (keys.length > 0) bestPath = icons[keys[0]];
       }
@@ -30,13 +28,30 @@ export class IconService {
 
     if (!bestPath) return null;
 
-    const fullPath = path.join(extensionRoot, bestPath);
+    const fullPath = path.resolve(path.join(extensionRoot, bestPath));
+    // P0 Fix: Path traversal protection
+    if (!fullPath.startsWith(path.resolve(extensionRoot))) {
+      return null;
+    }
+
     if (!(await fs.pathExists(fullPath))) return null;
 
     try {
       const buffer = await fs.readFile(fullPath);
       const ext = path.extname(bestPath).toLowerCase().replace('.', '');
-      const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext || 'png'}`;
+
+      // Robust MIME type detection
+      const mimeMap: Record<string, string> = {
+        svg: 'image/svg+xml',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        ico: 'image/x-icon',
+        png: 'image/png',
+        gif: 'image/gif',
+        webp: 'image/webp',
+      };
+      const mime = mimeMap[ext] || `image/${ext || 'png'}`;
+
       return `data:${mime};base64,${buffer.toString('base64')}`;
     } catch (e) {
       return null;

@@ -8,9 +8,7 @@ import { Readable, PassThrough } from 'stream';
 vi.mock('yauzl');
 vi.mock('fs-extra');
 vi.mock('tmp', () => ({
-  default: {
-    dirSync: () => ({ name: '/tmp/test-unpack' })
-  },
+  default: { dirSync: () => ({ name: '/tmp/test-unpack' }) },
   dirSync: () => ({ name: '/tmp/test-unpack' })
 }));
 
@@ -19,79 +17,66 @@ describe('UnpackService', () => {
     vi.clearAllMocks();
   });
 
-  it('should unpack a valid zip file with files and directories', async () => {
+  function createMockZip() {
     const mockZip = new EventEmitter() as any;
     mockZip.readEntry = vi.fn();
     mockZip.openReadStream = vi.fn((entry, cb) => {
         const stream = new Readable({
-          read() {
-            this.push('content');
-            this.push(null);
-          }
+          read() { this.push('data'); this.push(null); }
         });
         cb(null, stream);
     });
+    return mockZip;
+  }
 
+  it('should unpack directory and file entries', async () => {
+    const mockZip = createMockZip();
     vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => {
       process.nextTick(() => cb(null, mockZip));
     });
 
-    const unpackPromise = UnpackService.unpack('test.zip');
+    const p = UnpackService.unpack('test.zip');
+    await new Promise(r => process.nextTick(r));
 
-    await new Promise(resolve => process.nextTick(resolve));
-
-    // Emit a directory entry
+    // Dir entry
     mockZip.emit('entry', { fileName: 'subdir/' });
     expect(fs.mkdirpSync).toHaveBeenCalled();
 
-    // Emit a file entry
+    // File entry
     const mockWriteStream = new PassThrough();
     vi.mocked(fs.createWriteStream).mockReturnValue(mockWriteStream as any);
-
     mockZip.emit('entry', { fileName: 'file.txt' });
 
-    // Simulate stream finish
     process.nextTick(() => {
         mockWriteStream.emit('close');
         mockZip.emit('close');
     });
 
-    const res = await unpackPromise;
+    const res = await p;
     expect(res).toBe('/tmp/test-unpack');
   });
 
-  it('should detect path traversal attacks', async () => {
-    const mockZip = new EventEmitter() as any;
-    mockZip.readEntry = vi.fn();
+  it('should detect path traversal', async () => {
+    const mockZip = createMockZip();
     vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => {
       process.nextTick(() => cb(null, mockZip));
     });
 
     const p = UnpackService.unpack('test.zip');
-    await new Promise(resolve => process.nextTick(resolve));
-
+    await new Promise(r => process.nextTick(r));
     mockZip.emit('entry', { fileName: '../../etc/passwd' });
 
     await expect(p).rejects.toThrow('Potential path traversal attack detected');
   });
 
-  it('should handle yauzl open errors', async () => {
-    vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => {
-      process.nextTick(() => cb(new Error('open failed')));
-    });
-    await expect(UnpackService.unpack('test.zip')).rejects.toThrow('open failed');
-  });
-
-  it('should handle yauzl zip errors', async () => {
-    const mockZip = new EventEmitter() as any;
-    mockZip.readEntry = vi.fn();
+  it('should handle zip error', async () => {
+    const mockZip = createMockZip();
     vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => {
       process.nextTick(() => cb(null, mockZip));
     });
     const p = UnpackService.unpack('test.zip');
-    await new Promise(resolve => process.nextTick(resolve));
-
-    mockZip.emit('error', new Error('zip error'));
-    await expect(p).rejects.toThrow('zip error');
+    await new Promise(r => process.nextTick(r));
+    mockZip.emit('error', new Error('zip fail'));
+    await expect(p).rejects.toThrow('zip fail');
   });
 });

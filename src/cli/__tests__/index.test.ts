@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-describe('CLI Module', () => {
-  it('should be valid', () => {
-    expect(true).toBe(true);
+describe('CLI Bootstrap', () => {
+  it('should be valid and loadable', async () => {
+    const mod = await import('../index.js');
+    expect(mod).toBeDefined();
   });
 });

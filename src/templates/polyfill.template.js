@@ -15,7 +15,6 @@ function buildPolyfill({ isBackground = false } = {}) {
 
   const _closeTab = () => {
     if (typeof window.close === "function") window.close();
-    else if (typeof GM_close === "function") GM_close();
     else _warn("Cannot close tab via standard APIs.");
   };
 
@@ -33,7 +32,7 @@ function buildPolyfill({ isBackground = false } = {}) {
     i18n: {
       getMessage: (key, subs = []) => {
         let msg = LOCALE_KEYS[key]?.message || key;
-        (Array.isArray(subs) ? subs : [subs]).forEach((s, i) => msg = msg.replace(`$${i+1}`, s));
+        (Array.isArray(subs) ? subs : [subs]).forEach((s, i) => msg = msg.replace(\`$\${i+1}\`, s));
         return msg;
       },
       getUILanguage: () => USED_LOCALE || "en"
@@ -58,7 +57,9 @@ function buildPolyfill({ isBackground = false } = {}) {
     tabs: {
       create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
+      // Single-tab polyfill: id is ignored and always maps to current tab (id=1)
       get: (id) => Promise.resolve({ id: 1, url: CURRENT_LOCATION, active: true }),
+      // Single-tab polyfill: id is ignored and always maps to current tab (id=1)
       update: (id, props) => {
         if (props.url) {
             if (id === 1) window.location.href = props.url;
@@ -66,6 +67,7 @@ function buildPolyfill({ isBackground = false } = {}) {
         }
         return Promise.resolve({ id: 1, url: props.url || CURRENT_LOCATION, active: true });
       },
+      // Single-tab polyfill: id is ignored and always maps to current tab (id=1)
       remove: (id) => {
         if (id === 1) _closeTab();
         return Promise.resolve();
@@ -95,7 +97,8 @@ function buildPolyfill({ isBackground = false } = {}) {
         if (typeof GM_notification === "function") {
           GM_notification(details);
         } else if (Notification.permission === "granted") {
-          new Notification(opts.title, { body: opts.message, icon: opts.iconUrl });
+          const n = new Notification(opts.title, { body: opts.message, icon: opts.iconUrl });
+          if (opts.onclick) n.onclick = opts.onclick;
           if (callback) callback(id);
         } else {
           _warn("Notifications not supported or permission denied.");

@@ -39,7 +39,8 @@ export class AssembleStep extends Step {
         if (mapped) mapped.forEach(g => grants.add(g));
     }
 
-    if (target === 'userscript') {
+    // Conditionally include storage grants only if used
+    if (target === 'userscript' && permissions.includes('storage')) {
         AssembleStep.PERMISSION_GRANT_MAP['storage'].forEach(g => grants.add(g));
     }
 
@@ -49,7 +50,7 @@ export class AssembleStep extends Step {
         `// @namespace   to-userscript`,
         `// @version     ${manifest.version}`,
         `// @description ${(manifest.description || '').replace(/\n/g, ' ')}`,
-        `// @author      Converted by to-userscript`,
+        `// @author      Converted by johnlikescarrot/to-userscript`,
     ];
 
     if (iconBase64) {
@@ -130,8 +131,9 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{USED_LOCALE}}': JSON.stringify(context.config.locale || 'en')
     });
 
+    // P1 Fix: Gate metadata to userscript target
     const wrapper = `
-${metadataLines.join('\n')}
+${target === 'userscript' ? metadataLines.join('\n') : ''}
 
 (function() {
     'use strict';
