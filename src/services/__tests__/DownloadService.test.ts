@@ -27,3 +27,8 @@ describe('DownloadService', () => {
     expect(() => DownloadService.getCrxUrl('short')).toThrow();
   });
 });
+
+  it('should throw on non-ok response', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, statusText: 'Not Found' } as any);
+    await expect(DownloadService.download('http://bad.url', 'dest')).rejects.toThrow('Failed to download: Not Found');
+  });

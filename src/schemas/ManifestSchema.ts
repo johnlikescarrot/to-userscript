@@ -60,6 +60,9 @@ export const ManifestV3Schema = z.object({
     page: z.string().optional(),
     open_in_tab: z.boolean().optional(),
   }).optional(),
+  side_panel: z.object({
+    default_path: z.string().optional(),
+  }).optional(),
   web_accessible_resources: z.array(z.object({
     resources: z.array(z.string()),
     matches: z.array(z.string()).optional(),
@@ -80,8 +83,12 @@ export interface NormalizedManifest {
     default_icon?: string | Record<string, string>;
   };
   options_page?: string;
+  side_panel?: {
+    default_path?: string;
+  };
   background_scripts: string[];
   web_accessible_resources: string[];
+  permissions: string[];
   raw: any;
 }
 

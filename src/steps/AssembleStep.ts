@@ -24,18 +24,33 @@ export class AssembleStep extends Step {
       'document-start': [], 'document-end': [], 'document-idle': []
     };
 
+    const matches = new Set<string>();
+    const excludeMatches = new Set<string>();
+
     if (manifest.content_scripts) {
       for (const cs of manifest.content_scripts) {
-        const runAt = (cs.run_at?.replace('_', '-') || 'document-idle');
+        if (cs.matches) {
+            cs.matches.forEach(m => matches.add(m));
+        }
+        // Exclude matches aren't explicitly in our current schema but good for future-proofing
+        const runAtRaw = cs.run_at || 'document-idle';
+        const runAt = runAtRaw.replace('_', '-');
+
         if (cs.js) {
           for (const js of cs.js) {
             const normalized = normalizePath(js);
-            if (resources.jsContents[normalized]) {
-              runAtMap[runAt].push(`// --- ${normalized}\n${resources.jsContents[normalized]}`);
+            const content = resources.jsContents[normalized];
+            if (content) {
+              runAtMap[runAt].push(`// --- ${normalized}\n${content}`);
             }
           }
         }
       }
+    }
+
+    // Default to *://*/* only if no matches found
+    if (matches.size === 0) {
+        matches.add('*://*/*');
     }
 
     const combinedExecutionLogic = `
@@ -82,23 +97,52 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(manifest.content_scripts),
       '{{OPTIONS_PAGE_PATH}}': JSON.stringify(manifest.options_page || null),
       '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action.default_popup || null),
+      '{{SIDE_PANEL_PATH}}': JSON.stringify(manifest.side_panel?.default_path || null),
       '{{EXTENSION_ICON}}': 'null',
       '{{LOCALE}}': '{}',
       '{{USED_LOCALE}}': JSON.stringify(context.config.locale || 'en')
     });
 
+    const matchHeaders = Array.from(matches).map(m => `// @match       ${m}`).join('\n');
+    const excludeMatchHeaders = Array.from(excludeMatches).map(m => `// @exclude-match ${m}`).join('\n');
+
     const wrapper = `
+// ==UserScript==
+// @name        ${manifest.name}
+// @namespace   to-userscript
+// @version     ${manifest.version}
+// @description ${manifest.description || 'Converted with to-userscript'}
+${matchHeaders}
+${excludeMatchHeaders}
+// @grant       GM_setValue
+// @grant       GM_getValue
+// @grant       GM_deleteValue
+// @grant       GM_listValues
+// @grant       GM_xmlhttpRequest
+// @grant       GM_registerMenuCommand
+// @grant       GM_openInTab
+// @grant       GM_notification
+// @grant       GM_cookie
+// @grant       GM_webRequest
+// @grant       GM_addElement
+// @connect     *
+// @run-at      document-start
+// @sandbox     JavaScript
+// ==/UserScript==
+
 (function() {
     'use strict';
     const SCRIPT_NAME = ${JSON.stringify(manifest.name)};
-    const _log = (...args) => console.log(\`[\${SCRIPT_NAME}]\`, ...args);
-    const _warn = (...args) => console.warn(\`[\${SCRIPT_NAME}]\`, ...args);
-    const _error = (...args) => console.error(\`[\${SCRIPT_NAME}]\`, ...args);
+    const _log = (...args) => console.log("[" + SCRIPT_NAME + "]", ...args);
+    const _warn = (...args) => console.warn("[" + SCRIPT_NAME + "]", ...args);
+    const _error = (...args) => console.error("[" + SCRIPT_NAME + "]", ...args);
 
     // --- Utils
     const escapeRegex = ${RegexUtils.escapeRegex.toString()};
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
+
+    const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap)};
 
     // --- Polyfill & Logic
     ${mainPolyfill}

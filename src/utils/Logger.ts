@@ -6,6 +6,17 @@ export class Logger {
 
   constructor(private context: string) {}
 
+  static showBanner() {
+      console.log(chalk.blue.bold(`
+   __                                                   _       _
+  / _|_ __ ___  _ __ ___         _   _ ___  ___ _ __ ___  ___ _ __(_)_ __ | |_
+ | |_| '__/ _ \\| '_ \` _ \\ _____ | | | / __|/ _ \\ '__/ __|/ __| '__| | '_ \\| __|
+ |  _| | | (_) | | | | | |_____| | |_| \\__ \\  __/ |  \\__ \\ (__| |  | | |_) | |_
+ |_| |_|  \\___/|_| |_| |_|      \\__,_|___/\\___|_|  |___/\\___|_|  |_| .__/ \\__|
+                                                                    |_|
+      `) + chalk.white.italic("Transcendent Extension to Userscript Converter") + "\n");
+  }
+
   info(message: string): void {
     console.log(chalk.blue(`[${this.context}] `) + message);
   }

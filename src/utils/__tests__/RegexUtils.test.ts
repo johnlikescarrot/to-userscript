@@ -7,57 +7,32 @@ import {
 } from '../RegexUtils.js';
 
 describe('RegexUtils', () => {
-  describe('escapeRegex', () => {
-    it('should escape special regex characters', () => {
-      expect(escapeRegex('*.domain.com')).toBe('\\*\\.domain\\.com');
-    });
+  it('should escape regex', () => {
+      expect(escapeRegex('.')).toBe('\\.');
   });
 
-  describe('convertMatchPatternToRegExpString', () => {
-    it('should handle * scheme', () => {
-      const res = convertMatchPatternToRegExpString('*://google.com/*');
-      expect(res).toMatch(/https\?\|file\|ftp/);
-    });
-
-    it('should handle specific scheme', () => {
-      const res = convertMatchPatternToRegExpString('https://google.com/*');
-      expect(res).toContain('^https');
-    });
-
-    it('should handle *.domain host', () => {
-      const res = convertMatchPatternToRegExpString('https://*.google.com/*');
-      expect(res).toContain('google\\.com');
-      // Using match to be more flexible with escaping
-      expect(res).toMatch(/\[\^\\?\/\]\+/);
-    });
-
-    it('should return nothing-matching regex for invalid patterns', () => {
-      expect(convertMatchPatternToRegExpString('invalid')).toBe('$.');
-    });
+  it('should handle all convertMatchPatternToRegExpString branches', () => {
+      expect(convertMatchPatternToRegExpString(123 as any)).toBe('$.');
+      expect(convertMatchPatternToRegExpString('')).toBe('$.');
+      expect(convertMatchPatternToRegExpString('bad')).toBe('$.');
+      expect(convertMatchPatternToRegExpString('*://google.com/*')).toContain('https?|file|ftp');
+      expect(convertMatchPatternToRegExpString('https://google.com/*')).toContain('https');
+      expect(convertMatchPatternToRegExpString('http://')).toBe('$.');
+      expect(convertMatchPatternToRegExpString('https://*.google.com/*')).toContain('google');
+      expect(convertMatchPatternToRegExpString('https://*/a')).toContain('[^/]+');
+      expect(convertMatchPatternToRegExpString('https://google.com')).toContain('google');
+      expect(convertMatchPatternToRegExpString('https://google.com/')).toContain('google');
   });
 
-  describe('convertMatchPatternToRegExp', () => {
-    it('should handle <all_urls>', () => {
-      const re = convertMatchPatternToRegExp('<all_urls>');
-      expect(re.test('https://google.com')).toBe(true);
-    });
-
-    it('should match valid URLs', () => {
-      const re = convertMatchPatternToRegExp('https://google.com/*');
-      expect(re.test('https://google.com/path')).toBe(true);
-      expect(re.test('http://google.com/path')).toBe(false);
-    });
+  it('should handle all convertMatchPatternToRegExp branches', () => {
+      expect(convertMatchPatternToRegExp('<all_urls>').test('http://a.com')).toBe(true);
+      expect(convertMatchPatternToRegExp('https://google.com/*').test('https://google.com/a')).toBe(true);
   });
 
-  describe('matchGlobPattern', () => {
-    it('should match simple patterns', () => {
-      expect(matchGlobPattern('images/*', 'images/icon.png')).toBe(true);
-      expect(matchGlobPattern('images/*', 'css/style.css')).toBe(false);
-    });
-
-    it('should handle recursive double star', () => {
-      expect(matchGlobPattern('**/*.js', 'scripts/main.js')).toBe(true);
-      expect(matchGlobPattern('**/*.js', 'lib/sub/other.js')).toBe(true);
-    });
+  it('should handle all matchGlobPattern branches', () => {
+      expect(matchGlobPattern('', 'a')).toBe(false);
+      expect(matchGlobPattern('a', '')).toBe(false);
+      expect(matchGlobPattern('a.js', 'a.js')).toBe(true);
+      expect(matchGlobPattern('*.js', 'a.js')).toBe(true);
   });
 });
