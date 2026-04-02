@@ -22,7 +22,8 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   if (host === '*') {
     hostRegex = '[^/]+';
   } else if (host.startsWith('*.')) {
-    hostRegex = '(?:[^\\/]+\\.)?' + escapeRegex(host.substring(2));
+    // Note: Reflecting instruction to NOT match bare domain with *.
+    hostRegex = '[^\\/]+\\.' + escapeRegex(host.substring(2));
   } else {
     hostRegex = escapeRegex(host);
   }
@@ -34,13 +35,15 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
     pathPart = '/' + pathPart;
   }
 
-  let pathRegex = pathPart.split('*').map(escapeRegex).join('.*');
+  // Collapse consecutive wildcards to prevent ReDoS and ensure clean Regex
+  let pathRegex = pathPart.split('*')
+    .map(escapeRegex)
+    .join('.*')
+    .replace(/(\.\*)+/g, '.*'); // Collapse multiple .* runs
 
   if (pathRegex === '/.*') {
     pathRegex = '(?:/.*)?';
   } else {
-    // Standard match pattern path semantics: if it ends in /, it matches with or without trailing /
-    // If it doesn't end in / it still should match optional / at end of string
     if (pathRegex.endsWith('/')) {
         pathRegex = pathRegex.slice(0, -1) + '[/]?(?:[?#]|$)';
     } else {
@@ -75,7 +78,8 @@ export function matchGlobPattern(pattern: string, testPath: string): boolean {
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, '__DOUBLESTAR__')
     .replace(/\*/g, '[^/]*')
-    .replace(/__DOUBLESTAR__/g, '.*');
+    .replace(/__DOUBLESTAR__/g, '.*')
+    .replace(/(\.\*)+/g, '.*'); // Prevent ReDoS here too
 
   regexPattern = '^' + regexPattern + '$';
 

@@ -27,14 +27,19 @@ describe('AssembleStep', () => {
   it('should handle all grant, metadata and resource branches', async () => {
     const ctx = new ConversionContext({ inputDir: '.', outputFile: 'out.js', target: 'userscript' });
     ctx.set('manifest', {
-        name: 't', version: '1', description: 'd',
+        name: 't\nn', version: '1', description: 'd\nn',
         raw: {
             permissions: ['storage', 'alarms'],
-            host_permissions: ['https://*.example.com/*'],
-            author: 'Me',
-            homepage_url: 'http://home.com',
+            host_permissions: [
+                'https://*.example.com/*',
+                'https://google.com:8080/path',
+                '*://sub.domain.com/*', // Wildcard scheme test
+                '<all_urls>'
+            ],
+            author: 'Me\nAuthor',
+            homepage_url: 'http://home.com\n',
             support_url: 'http://support.com',
-            license: 'MIT'
+            license: 'MIT\n'
         },
         content_scripts: [{ matches: ['*://*/*'], js: ['c.js'], run_at: 'document_start' }],
         icons: {}, action: {}, background_scripts: []
@@ -45,9 +50,9 @@ describe('AssembleStep', () => {
     await new AssembleStep().execute(ctx);
     const content = vi.mocked(fs.outputFile).mock.calls[0][1] as string;
 
-    // Core Metadata
-    expect(content).toContain('@name        t');
-    expect(content).toContain('@author      Me');
+    // Core Metadata Sanitization
+    expect(content).toContain('@name        t n');
+    expect(content).toContain('@author      Me Author');
     expect(content).toContain('@homepageURL http://home.com');
     expect(content).toContain('@supportURL  http://support.com');
     expect(content).toContain('@license     MIT');
@@ -56,8 +61,13 @@ describe('AssembleStep', () => {
     expect(content).toContain('@grant       GM_setValue');
     expect(content).toContain('@grant       GM_info');
 
-    // Connect
+    // Connect (Cleaned and unique)
     expect(content).toContain('@connect     example.com');
+    expect(content).toContain('@connect     google.com');
+    expect(content).toContain('@connect     sub.domain.com'); // Verified *:// handler
+    expect(content).toContain('@connect     *'); // Verified <all_urls>
+
+    expect(content).not.toContain('@connect     *://');
   });
 
   it('should handle vanilla target without metadata block', async () => {

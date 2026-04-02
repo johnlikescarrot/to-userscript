@@ -19,8 +19,14 @@ export class AssembleStep extends Step {
     'cookies': ['GM_cookie'],
     'tabs': ['GM_openInTab'],
     'webRequest': ['GM_xmlhttpRequest'],
-    'alarms': ['GM_getValue', 'GM_setValue'] // Alarms might need storage for persistence in future
+    'alarms': ['GM_getValue', 'GM_setValue']
   };
+
+  /** Sanitizes metadata values by removing newlines and trimming */
+  private sanitize(val: string | undefined): string {
+    if (!val) return '';
+    return val.replace(/[\r\n]/g, ' ').trim();
+  }
 
   async run(context: ConversionContext): Promise<void> {
     const manifest = context.get<NormalizedManifest>('manifest');
@@ -36,32 +42,29 @@ export class AssembleStep extends Step {
     const permissions = manifest.raw.permissions || [];
     const hostPermissions = manifest.raw.host_permissions || [];
 
-    // Standard permissions -> @grant
     for (const p of permissions) {
         const mapped = AssembleStep.PERMISSION_GRANT_MAP[p];
         if (mapped) mapped.forEach(g => grants.add(g));
     }
 
-    // Always include storage for internal sync if userscript AND declared in manifest
     if (target === 'userscript' && permissions.includes('storage')) {
         AssembleStep.PERMISSION_GRANT_MAP['storage'].forEach(g => grants.add(g));
     }
 
     const metadataLines = [
         '// ==UserScript==',
-        `// @name        ${manifest.name}`,
+        `// @name        ${this.sanitize(manifest.name)}`,
         `// @namespace   to-userscript`,
-        `// @version     ${manifest.version}`,
-        `// @description ${(manifest.description || '').replace(/\n/g, ' ')}`,
-        `// @author      ${manifest.raw.author || 'johnlikescarrot/to-userscript'}`,
+        `// @version     ${this.sanitize(manifest.version)}`,
+        `// @description ${this.sanitize(manifest.description)}`,
+        `// @author      ${this.sanitize(manifest.raw.author || 'johnlikescarrot/to-userscript')}`,
     ];
 
-    // Additional Metadata Tags from Manifest
-    if (manifest.raw.homepage_url) metadataLines.push(`// @homepageURL ${manifest.raw.homepage_url}`);
-    if (manifest.raw.support_url) metadataLines.push(`// @supportURL  ${manifest.raw.support_url}`);
-    // Heuristic license from manifest or default
-    const license = (manifest.raw as any).license || 'ISC';
-    metadataLines.push(`// @license     ${license}`);
+    if (manifest.raw.homepage_url) metadataLines.push(`// @homepageURL ${this.sanitize(manifest.raw.homepage_url)}`);
+    if (manifest.raw.support_url) metadataLines.push(`// @supportURL  ${this.sanitize(manifest.raw.support_url)}`);
+
+    const license = (manifest.raw as any).license;
+    if (license) metadataLines.push(`// @license     ${this.sanitize(license)}`);
 
     if (iconBase64) {
         metadataLines.push(`// @icon        ${iconBase64}`);
@@ -71,7 +74,6 @@ export class AssembleStep extends Step {
     manifest.content_scripts.forEach(cs => cs.matches?.forEach(m => allMatches.add(m)));
     allMatches.forEach(m => metadataLines.push(`// @match       ${m}`));
 
-    // Host permissions -> @connect (cleaned hostnames only)
     const cleanedHosts = new Set<string>();
     hostPermissions.forEach(p => {
         try {
@@ -79,10 +81,12 @@ export class AssembleStep extends Step {
                 cleanedHosts.add('*');
                 return;
             }
-            let host = p.replace(/^(https?|file|ftp):\/\//, '');
+            // Robustly clean hosts: handle *://, schemes, paths, and ports
+            let host = p.replace(/^(?:\*|https?|file|ftp):\/\//, '');
             host = host.split('/')[0];
             host = host.split(':')[0];
             if (host.startsWith('*.')) host = host.substring(2);
+
             if (host && host !== '*') cleanedHosts.add(host);
             else if (host === '*') cleanedHosts.add('*');
         } catch (e) {}

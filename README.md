@@ -6,7 +6,7 @@
 
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
   [![License: ISC](https://img.shields.io/badge/License-ISC-green.svg?style=for-the-badge)](https://opensource.org/licenses/ISC)
-  ![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen.svg?style=for-the-badge)
+  [![Coverage](https://codecov.io/gh/johnlikescarrot/to-userscript/graph/badge.svg?token=${{ secrets.CODECOV_TOKEN }})](https://codecov.io/gh/johnlikescarrot/to-userscript)
   ![Status](https://img.shields.io/badge/Status-Release--Ready-orange.svg?style=for-the-badge)
 </div>
 

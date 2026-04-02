@@ -101,15 +101,16 @@ function buildPolyfill({ isBackground = false } = {}) {
       create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
       get: (id) => Promise.resolve({ id: 1, url: CURRENT_LOCATION, active: true }),
+      /** Single-tab polyfill: id is ignored, behavior is uniform */
       update: (id, props) => {
         if (props && props.url) {
-            if (id === 1) window.location.href = props.url;
-            else _openTab(props.url, props.active !== false);
+            window.location.href = props.url;
         }
         return Promise.resolve({ id: 1, url: (props && props.url) || CURRENT_LOCATION, active: true });
       },
+      /** Single-tab polyfill: id is ignored, only close if id is 1 */
       remove: (id) => {
-        _closeTab();
+        if (id === 1) _closeTab();
         return Promise.resolve();
       },
       sendMessage: (id, msg) => RUNTIME.sendMessage(msg)

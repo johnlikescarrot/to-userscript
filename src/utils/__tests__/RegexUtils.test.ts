@@ -13,15 +13,22 @@ describe('RegexUtils', () => {
 
     const wildcardScheme = convertMatchPatternToRegExp('*://*/*');
     expect(wildcardScheme.test('http://example.com/')).toBe(true);
-    expect(wildcardScheme.test('https://sub.domain/path')).toBe(true);
+    expect(wildcardScheme.test('https://sub.domain/path?q=1#hash')).toBe(true); // Query/Hash test
 
     const subdomain = convertMatchPatternToRegExp('https://*.google.com/path*');
-    expect(subdomain.test('https://google.com/path')).toBe(true);
-    expect(subdomain.test('https://mail.google.com/path/to/resource')).toBe(true);
+    expect(subdomain.test('https://mail.google.com/path/to/resource?auth=true')).toBe(true);
+    expect(subdomain.test('https://google.com/path')).toBe(false); // Browser behavior: *. matches subdomains only
 
     const exact = convertMatchPatternToRegExp('http://host');
     expect(exact.test('http://host/')).toBe(true);
-    expect(exact.test('http://host')).toBe(true);
+    expect(exact.test('http://host?query')).toBe(true);
+    expect(exact.test('http://host#hash')).toBe(true);
+  });
+
+  it('should collapse wildcards to prevent ReDoS', () => {
+    const res = convertMatchPatternToRegExpString('a*b**c***');
+    // regex should not contain consecutive .*
+    expect(res).not.toContain('.*.*');
   });
 
   it('should handle regex errors and special patterns', () => {
