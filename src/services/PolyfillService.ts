@@ -32,23 +32,23 @@ function _base64ToUint8Array(base64) {
         const data = EXTENSION_ASSETS_MAP[cleanPath];
         if (!data) return path;
 
-        const isText = ["html", "htm", "js", "css", "json", "svg"].some(ext => cleanPath.endsWith(ext));
+        const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
         const blob = isText ? new Blob([data], { type: "text/plain" }) : new Blob([_base64ToUint8Array(data)]);
         return URL.createObjectURL(blob);
       }
     `;
 
-    // Ensure all placeholders are replaced, especially INJECTED_MANIFEST
+    // Global replacement using regex
     let combined = `
 ${decodingHelper}
 ${messaging}
 ${abstraction}
 
 ${polyfillTemplate
-  .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
-  .replace('{{SCRIPT_ID}}', internalId)
+  .replace(/{{IS_IFRAME}}/g, target === 'postmessage' ? 'true' : 'false')
+  .replace(/{{SCRIPT_ID}}/g, internalId)
   .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
-  .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest))}
+  .replace(/{{INJECTED_MANIFEST}}/g, JSON.stringify(manifest))}
 `;
 
     return combined;

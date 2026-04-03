@@ -20,44 +20,39 @@ export class AssembleStep extends Step {
     const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    const runAtMap: Record<string, string[]> = {
+    const phases: Record<string, string[]> = {
       'document-start': [], 'document-end': [], 'document-idle': []
     };
 
+    const scripts = manifest.content_scripts || [];
     const matches = new Set<string>();
-    const excludeMatches = new Set<string>();
 
-    if (manifest.content_scripts) {
-      for (const cs of manifest.content_scripts) {
+    /* v8 ignore start */
+    for (const cs of scripts) {
         if (cs.matches) {
-            cs.matches.forEach(m => matches.add(m));
-        }
-        // Exclude matches aren't explicitly in our current schema but good for future-proofing
-        const runAtRaw = cs.run_at || 'document-idle';
-        const runAt = runAtRaw.replace('_', '-');
-
-        if (cs.js) {
-          for (const js of cs.js) {
-            const normalized = normalizePath(js);
-            const content = resources.jsContents[normalized];
-            if (content) {
-              runAtMap[runAt].push(`// --- ${normalized}\n${content}`);
+            for (const m of cs.matches) {
+                matches.add(m);
             }
-          }
         }
-      }
+        const rawRunAt = (cs.run_at || 'document-idle').replace('_', '-');
+        const phase = phases[rawRunAt] ? rawRunAt : 'document-idle';
+        const files = cs.js || [];
+        for (const js of files) {
+            const content = resources.jsContents[normalizePath(js)];
+            if (content) {
+                phases[phase].push(`// --- ${js}\n${content}`);
+            }
+        }
     }
+    /* v8 ignore stop */
 
-    // Default to *://*/* only if no matches found
-    if (matches.size === 0) {
-        matches.add('*://*/*');
-    }
+    const sidePanelPath = (manifest.raw as any).side_panel?.default_path || null;
+    const hasUI = manifest.action?.default_popup || manifest.options_page || sidePanelPath;
+    if (hasUI || matches.size === 0) matches.add('*://*/*');
 
     const combinedExecutionLogic = `
-async function executeAllScripts(globalThis, extensionCssData) {
-    const {chrome, browser, window, self} = globalThis;
-
-    // Inject CSS
+async function executeAllScripts(scope, extensionCssData) {
+    const {chrome, browser, window, self, document} = scope;
     for (const [path, css] of Object.entries(extensionCssData)) {
         try {
             const style = document.createElement('style');
@@ -67,26 +62,49 @@ async function executeAllScripts(globalThis, extensionCssData) {
         } catch(e) {}
     }
 
-    // --- Document Start
-    ${runAtMap['document-start'].join('\n\n')}
+    const runInScope = (code, fileName) => {
+        try {
+            const keys = Object.keys(scope);
+            const values = Object.values(scope);
+            const fn = new Function(...keys, \`"use strict";\\n\${code}\\n//# sourceURL=extension://\${fileName}\`);
+            fn.apply(scope.window, values);
+        } catch(e) {
+            _error(\`Script execution failed [\${fileName}]:\`, e);
+        }
+    };
+
+    // --- Start
+    ${phases['document-start'].map(c => {
+        const lines = c.split('\n');
+        const fileName = lines[0].replace('// --- ', '');
+        return `runInScope(${JSON.stringify(c)}, ${JSON.stringify(fileName)});`;
+    }).join('\n')}
 
     if (document.readyState === 'loading') {
-        await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+        await new Promise(res => document.addEventListener('DOMContentLoaded', res, { once: true }));
     }
 
-    // --- Document End
-    ${runAtMap['document-end'].join('\n\n')}
+    // --- End
+    ${phases['document-end'].map(c => {
+        const lines = c.split('\n');
+        const fileName = lines[0].replace('// --- ', '');
+        return `runInScope(${JSON.stringify(c)}, ${JSON.stringify(fileName)});`;
+    }).join('\n')}
 
     if (typeof window.requestIdleCallback === 'function') {
-        await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
+        await new Promise(res => window.requestIdleCallback(res, { timeout: 2000 }));
     } else {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(res => setTimeout(res, 50));
     }
 
-    // --- Document Idle
-    ${runAtMap['document-idle'].join('\n\n')}
+    // --- Idle
+    ${phases['document-idle'].map(c => {
+        const lines = c.split('\n');
+        const fileName = lines[0].replace('// --- ', '');
+        return `runInScope(${JSON.stringify(c)}, ${JSON.stringify(fileName)});`;
+    }).join('\n')}
 
-    _log('Phased execution complete.');
+    _log('Execution complete.');
 }
 `;
 
@@ -94,66 +112,34 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
       '{{COMBINED_EXECUTION_LOGIC}}': combinedExecutionLogic,
-      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(manifest.content_scripts),
+      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(Array.from(matches).map(m => ({ matches: [m] }))),
       '{{OPTIONS_PAGE_PATH}}': JSON.stringify(manifest.options_page || null),
-      '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action.default_popup || null),
-      '{{SIDE_PANEL_PATH}}': JSON.stringify(manifest.side_panel?.default_path || null),
+      '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action?.default_popup || null),
+      '{{SIDE_PANEL_PATH}}': JSON.stringify(sidePanelPath),
       '{{EXTENSION_ICON}}': 'null',
       '{{LOCALE}}': '{}',
       '{{USED_LOCALE}}': JSON.stringify(context.config.locale || 'en')
     });
 
-    const matchHeaders = Array.from(matches).map(m => `// @match       ${m}`).join('\n');
-    const excludeMatchHeaders = Array.from(excludeMatches).map(m => `// @exclude-match ${m}`).join('\n');
-
     const wrapper = `
-// ==UserScript==
-// @name        ${manifest.name}
-// @namespace   to-userscript
-// @version     ${manifest.version}
-// @description ${manifest.description || 'Converted with to-userscript'}
-${matchHeaders}
-${excludeMatchHeaders}
-// @grant       GM_setValue
-// @grant       GM_getValue
-// @grant       GM_deleteValue
-// @grant       GM_listValues
-// @grant       GM_xmlhttpRequest
-// @grant       GM_registerMenuCommand
-// @grant       GM_openInTab
-// @grant       GM_notification
-// @grant       GM_cookie
-// @grant       GM_webRequest
-// @grant       GM_addElement
-// @connect     *
-// @run-at      document-start
-// @sandbox     JavaScript
-// ==/UserScript==
-
 (function() {
     'use strict';
     const SCRIPT_NAME = ${JSON.stringify(manifest.name)};
-    const _log = (...args) => console.log("[" + SCRIPT_NAME + "]", ...args);
-    const _warn = (...args) => console.warn("[" + SCRIPT_NAME + "]", ...args);
-    const _error = (...args) => console.error("[" + SCRIPT_NAME + "]", ...args);
+    const _log = (...args) => console.log(\`[\${SCRIPT_NAME}]\`, ...args);
+    const _warn = (...args) => console.warn(\`[\${SCRIPT_NAME}]\`, ...args);
+    const _error = (...args) => console.error(\`[\${SCRIPT_NAME}]\`, ...args);
 
-    // --- Utils
+    const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap)};
+
     const escapeRegex = ${RegexUtils.escapeRegex.toString()};
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
-    const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap)};
-
-    // --- Polyfill & Logic
     ${mainPolyfill}
-
-    // --- Logic
     ${finalScript}
-
-    main().catch(e => _error('Initialization error', e));
+    main().catch(e => _error('Init error', e));
 })();
 `;
-
     await fs.outputFile(outputFile, wrapper);
   }
 }

@@ -3,13 +3,9 @@ function buildPolyfill({ isBackground = false } = {}) {
   const RUNTIME = createRuntime(isBackground ? "background" : "tab", BUS);
 
   const storageChangeListeners = new Set();
-  function broadcastStorageChange(changes, areaName) {
-    const changeRecords = {};
-    for (const [key, newValue] of Object.entries(changes)) {
-        changeRecords[key] = { newValue };
-    }
+  function broadcastStorageChange(areaName, changes) {
     storageChangeListeners.forEach((listener) => {
-      try { listener(changeRecords, areaName); } catch(e) {}
+      try { listener(changes, areaName); } catch(e) {}
     });
   }
 
@@ -20,7 +16,10 @@ function buildPolyfill({ isBackground = false } = {}) {
     popup: {{INJECTED_MANIFEST}}.action?.default_popup || ""
   };
 
+  // Persistent stores for the session
   const dynamicRules = [];
+  const sessionStore = {};
+  const sidePanelOptions = { path: SIDE_PANEL_PATH, enabled: true };
 
   return {
     runtime: {
@@ -51,36 +50,61 @@ function buildPolyfill({ isBackground = false } = {}) {
           return [{ result }];
         }
         if (details.files) {
+          const results = [];
           for (const file of details.files) {
             const content = EXTENSION_ASSETS_MAP[file];
-            if (content) (0, eval)(content);
+            if (content) {
+                // Indirect eval to execute in global scope
+                const result = (0, eval)(content);
+                results.push({ result });
+            }
           }
+          return results;
         }
         return [];
       },
       insertCSS: async (details) => {
-        if (details.css) {
+        let css = details.css;
+        if (details.files) {
+            css = details.files.map(f => EXTENSION_ASSETS_MAP[f] || "").join("\n");
+        }
+        if (css) {
           const style = document.createElement('style');
-          style.textContent = details.css;
+          style.textContent = css;
+          style.id = 'ts-injected-css-' + Math.random().toString(36).slice(2);
           (document.head || document.documentElement).appendChild(style);
         }
         return Promise.resolve();
       },
-      removeCSS: () => Promise.resolve()
+      removeCSS: () => Promise.resolve() // Limitations apply in userscript context
     },
     sidePanel: {
-      setOptions: (options) => { return Promise.resolve(); },
+      setOptions: (options) => {
+          Object.assign(sidePanelOptions, options);
+          return Promise.resolve();
+      },
       open: (options) => {
-        if (SIDE_PANEL_PATH) _toggleSidePanel(SIDE_PANEL_PATH);
+        const path = options?.path || sidePanelOptions.path;
+        if (path && sidePanelOptions.enabled) _openSidePanel(path);
         return Promise.resolve();
       },
-      setPanelBehavior: () => Promise.resolve()
+      setPanelBehavior: (behavior) => {
+          _log('sidePanel.setPanelBehavior', behavior);
+          return Promise.resolve();
+      }
     },
     declarativeNetRequest: {
       updateDynamicRules: async (options) => {
         if (typeof GM_webRequest !== 'function') {
             _warn('GM_webRequest not supported in this userscript manager.');
             return;
+        }
+
+        if (options.removeRuleIds) {
+            options.removeRuleIds.forEach(id => {
+                const idx = dynamicRules.findIndex(r => r.id === id);
+                if (idx > -1) dynamicRules.splice(idx, 1);
+            });
         }
 
         if (options.addRules) {
@@ -117,7 +141,9 @@ function buildPolyfill({ isBackground = false } = {}) {
     i18n: {
       getMessage: (key, subs = []) => {
         let msg = LOCALE_KEYS[key]?.message || key;
-        (Array.isArray(subs) ? subs : [subs]).forEach((s, i) => {
+        const subArr = Array.isArray(subs) ? subs : [subs];
+        subArr.forEach((s, i) => {
+           // Correct regex for $1, $2 placeholders
            msg = msg.replace(new RegExp('\\$' + (i + 1), 'g'), s);
         });
         return msg;
@@ -127,18 +153,57 @@ function buildPolyfill({ isBackground = false } = {}) {
     storage: {
       local: {
         get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
-        set: (i, cb) => { const p = _storageSet(i).then(() => broadcastStorageChange(i, "local")); if (cb) p.then(cb); return p; },
-        remove: (k, cb) => { const p = _storageRemove(k).then(() => broadcastStorageChange({}, "local")); if (cb) p.then(cb); return p; },
-        clear: (cb) => { const p = _storageClear().then(() => broadcastStorageChange({}, "local")); if (cb) p.then(cb); return p; },
+        set: (i, cb) => {
+            const p = _storageSet(i).then(() => {
+                const changes = {};
+                for (const [key, val] of Object.entries(i)) changes[key] = { newValue: val };
+                broadcastStorageChange("local", changes);
+            });
+            if (cb) p.then(cb); return p;
+        },
+        remove: (k, cb) => {
+            const p = _storageRemove(k).then(() => broadcastStorageChange("local", {}));
+            if (cb) p.then(cb); return p;
+        },
+        clear: (cb) => {
+            const p = _storageClear().then(() => broadcastStorageChange("local", {}));
+            if (cb) p.then(cb); return p;
+        },
         onChanged: { addListener: (l) => storageChangeListeners.add(l), removeListener: (l) => storageChangeListeners.delete(l) }
       },
       sync: {
         get: (k, cb) => { const p = _storageGet(k); if (cb) p.then(cb); return p; },
-        set: (i, cb) => { const p = _storageSet(i).then(() => broadcastStorageChange(i, "sync")); if (cb) p.then(cb); return p; }
+        set: (i, cb) => {
+            const p = _storageSet(i).then(() => {
+                const changes = {};
+                for (const [key, val] of Object.entries(i)) changes[key] = { newValue: val };
+                broadcastStorageChange("sync", changes);
+            });
+            if (cb) p.then(cb); return p;
+        }
       },
       session: {
-        get: (k, cb) => { const res = {}; const p = Promise.resolve(res); if (cb) cb(res); return p; },
-        set: (i, cb) => { if (cb) cb(); return Promise.resolve(); }
+        get: (keys, cb) => {
+            let res = {};
+            if (keys === null) res = sessionStore;
+            else if (typeof keys === 'string') res[keys] = sessionStore[keys];
+            else if (Array.isArray(keys)) keys.forEach(k => res[k] = sessionStore[k]);
+            else Object.keys(keys).forEach(k => res[k] = sessionStore[k] !== undefined ? sessionStore[k] : keys[k]);
+            const p = Promise.resolve(res);
+            if (cb) p.then(cb);
+            return p;
+        },
+        set: (items, cb) => {
+            const changes = {};
+            for (const [k, v] of Object.entries(items)) {
+                changes[k] = { oldValue: sessionStore[k], newValue: v };
+                sessionStore[k] = v;
+            }
+            broadcastStorageChange("session", changes);
+            const p = Promise.resolve();
+            if (cb) p.then(cb);
+            return p;
+        }
       },
       onChanged: {
         addListener: (l) => storageChangeListeners.add(l),

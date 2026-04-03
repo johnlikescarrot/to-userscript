@@ -3,99 +3,52 @@ export function escapeRegex(s: string): string {
 }
 
 export function convertMatchPatternToRegExpString(pattern: string): string {
-  if (typeof pattern !== 'string') {
-      return '$.';
-  }
-  if (!pattern) {
-    return '$.';
-  }
+  if (pattern === '<all_urls>') return '.*';
+  if (typeof pattern !== 'string' || !pattern) return '$.';
 
   const schemeMatch = pattern.match(/^(\*|https?|file|ftp):\/\//);
-  if (!schemeMatch) {
-      return '$.';
-  }
+  if (!schemeMatch) return '$.';
   const scheme = schemeMatch[1];
   const remaining = pattern.substring(schemeMatch[0].length);
+  const schemeRegex = scheme === '*' ? 'https?|file|ftp' : scheme;
 
-  let schemeRegex: string;
-  if (scheme === '*') {
-      schemeRegex = 'https?|file|ftp';
-  } else {
-      schemeRegex = scheme;
+  if (scheme === 'file') {
+      const pathPart = remaining.startsWith('/') ? remaining : '/' + remaining;
+      return `^file:\\/\\/${pathPart.split('*').map(escapeRegex).join('.*')}`;
   }
 
   const hostMatch = remaining.match(/^([^\/]+)/);
-  if (!hostMatch) {
-      /* v8 ignore next 2 */
-      return '$.';
-  }
+  if (!hostMatch) return '$.';
   const host = hostMatch[1];
   const pathPart = remaining.substring(host.length);
 
-  let hostRegex: string;
-  if (host === '*') {
-    hostRegex = '[^/]+';
-  } else if (host.startsWith('*.')) {
-    hostRegex = '(?:[^\\/]+\\.)?' + escapeRegex(host.substring(2));
-  } else {
-    hostRegex = escapeRegex(host);
-  }
+  const hostRegex = host === '*' ? '[^/]+' : host.startsWith('*.') ? '(?:[^\\/]+\\.)?' + escapeRegex(host.substring(2)) : escapeRegex(host);
+  const pathPartBase = (pathPart.startsWith('/') ? pathPart : '/' + pathPart);
+  let pathRegex = pathPartBase.split('*').map(escapeRegex).join('.*');
 
-  let pathRegex = pathPart;
-  if (!pathRegex.startsWith('/')) {
-    pathRegex = '/' + pathRegex;
-  }
-  pathRegex = pathRegex.split('*').map(escapeRegex).join('.*');
-
-  if (pathRegex === '/.*') {
-    pathRegex = '(?:/.*)?';
-  } else {
-    pathRegex = pathRegex + '(?:[?#]|$)';
-  }
-
-  return `^${schemeRegex}:\\/\\/${hostRegex}${pathRegex}`;
+  if (pathRegex === '/.*') return `^${schemeRegex}:\\/\\/${hostRegex}(?:/.*)?`;
+  return `^${schemeRegex}:\\/\\/${hostRegex}${pathRegex}(?:[?#]|$)`;
 }
 
 export function convertMatchPatternToRegExp(pattern: string): RegExp {
-  if (pattern === '<all_urls>') {
-    return new RegExp('.*');
-  }
+  if (pattern === '<all_urls>') return new RegExp('.*');
   try {
-    const str = convertMatchPatternToRegExpString(pattern);
-    const singleEscapedPattern = str.replace(/\\\\/g, '\\');
-    return new RegExp(singleEscapedPattern);
-  } /* v8 ignore start */
-  catch {
-    return new RegExp('$.');
-  }
-  /* v8 ignore stop */
+    const s = convertMatchPatternToRegExpString(pattern);
+    if (s === '$.') return new RegExp('$.');
+    return new RegExp(s.replace(/\\\\/g, '\\'));
+  } catch { /* v8 ignore next */ return new RegExp('$.'); }
 }
 
 export function matchGlobPattern(pattern: string, testPath: string): boolean {
-  if (!pattern) return false;
-  if (!testPath) return false;
-
-  const normalizedPattern = pattern.replace(/\\/g, '/');
-  const normalizedPath = testPath.replace(/\\/g, '/');
-
-  if (normalizedPattern === normalizedPath) {
-      return true;
-  }
-
-  let regexPattern = normalizedPattern
-    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '__DOUBLESTAR__')
-    .replace(/\*/g, '[^/]*')
-    .replace(/__DOUBLESTAR__/g, '.*');
-
-  regexPattern = '^' + regexPattern + '$';
-
+  if (!pattern || !testPath) return false;
+  const np = pattern.replace(/\\/g, '/'), nt = testPath.replace(/\\/g, '/');
+  if (np === nt) return true;
   try {
-    const regex = new RegExp(regexPattern);
-    return regex.test(normalizedPath);
-  } /* v8 ignore start */
-  catch {
-    return false;
-  }
-  /* v8 ignore stop */
+    let rStr = np.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+                 .replace(/\\\*/g, '*')
+                 .replace(/\*\*/g, '__DS__')
+                 .replace(/\*/g, '[^/]*')
+                 .replace(/__DS__/g, '.*');
+    return new RegExp('^' + rStr + '$').test(nt);
+  } catch { /* v8 ignore next */ return false; }
 }

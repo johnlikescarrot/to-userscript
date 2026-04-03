@@ -22,7 +22,7 @@ describe('Main Entry Point', () => {
         run: vi.fn().mockImplementation(async () => {})
     };
     vi.mocked(MigrationEngine).mockImplementation((ctx: any) => {
-        ctx.set('manifest', { name: 'test', version: '1', description: '', raw: {} });
+        ctx.set('manifest', { name: 'test', version: '1', description: '', raw: {}, action: {}, permissions: [] });
         ctx.set('resources', { jsContents: {}, cssContents: {} });
         ctx.set('assetMap', {});
         return mockEngine as any;
@@ -35,7 +35,16 @@ describe('Main Entry Point', () => {
     } as any);
 
     expect(res.success).toBe(true);
-    expect(UnpackService.unpack).not.toHaveBeenCalled();
+  });
+
+  it('should return success: false when inputDir doesn\'t exist', async () => {
+      vi.mocked(fs.pathExists).mockResolvedValue(false as never);
+
+      // We don't mock MigrationEngine here to ensure convertExtension fails before running it
+      await expect(convertExtension({
+          inputDir: 'none',
+          outputFile: 'out.js'
+      } as any)).rejects.toThrow();
   });
 
   it('should unpack and run engine for file source', async () => {
@@ -49,7 +58,7 @@ describe('Main Entry Point', () => {
         run: vi.fn().mockImplementation(async () => {})
     };
     vi.mocked(MigrationEngine).mockImplementation((ctx: any) => {
-        ctx.set('manifest', { name: 'file-test', version: '1', description: '', raw: {} });
+        ctx.set('manifest', { name: 'file-test', version: '1', description: '', raw: {}, action: {}, permissions: [] });
         ctx.set('resources', { jsContents: {}, cssContents: {} });
         ctx.set('assetMap', {});
         return mockEngine as any;
@@ -64,22 +73,5 @@ describe('Main Entry Point', () => {
     expect(res.success).toBe(true);
     expect(UnpackService.unpack).toHaveBeenCalledWith('archive.zip');
     expect(fs.remove).toHaveBeenCalledWith('/tmp/unpacked');
-  });
-
-  it('should handle missing inputDir', async () => {
-    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
-    const mockEngine = {
-        addStep: vi.fn().mockReturnThis(),
-        run: vi.fn().mockImplementation(async () => {})
-    };
-    vi.mocked(MigrationEngine).mockImplementation((ctx: any) => {
-        ctx.set('manifest', { name: 'missing', version: '1', raw: {} });
-        ctx.set('resources', { jsContents: {}, cssContents: {} });
-        ctx.set('assetMap', {});
-        return mockEngine as any;
-    });
-
-    const res = await convertExtension({ inputDir: 'none', outputFile: 'out.js' } as any);
-    expect(res.success).toBe(true);
   });
 });

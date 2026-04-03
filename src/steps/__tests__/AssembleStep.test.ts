@@ -1,82 +1,50 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { AssembleStep } from '../AssembleStep.js';
 import { ConversionContext } from '../../core/ConversionContext.js';
+import { TemplateService } from '../../services/TemplateService.js';
 import fs from 'fs-extra';
 
 vi.mock('fs-extra');
-vi.mock('../../services/PolyfillService.js');
+vi.mock('../../services/PolyfillService.js', () => ({
+    PolyfillService: { build: vi.fn().mockResolvedValue('polyfill_code') }
+}));
 vi.mock('../../services/TemplateService.js', () => ({
-  TemplateService: {
-    load: vi.fn().mockResolvedValue('{{COMBINED_EXECUTION_LOGIC}}'),
-    replace: vi.fn().mockReturnValue('final script')
-  }
+    TemplateService: {
+        load: vi.fn().mockResolvedValue('{{COMBINED_EXECUTION_LOGIC}} {{INJECTED_MANIFEST}}'),
+        replace: vi.fn().mockImplementation((c, r) => {
+            let res = c;
+            for (const [k, v] of Object.entries(r)) res = res.replace(k, v);
+            return res;
+        })
+    }
 }));
 
 describe('AssembleStep', () => {
-  let ctx: ConversionContext;
-
-  beforeEach(() => {
-      vi.clearAllMocks();
-      ctx = new ConversionContext({ inputDir: '.', outputFile: 'out.js', target: 'userscript' });
-      ctx.set('assetMap', {});
-      ctx.set('resources', { jsContents: {}, cssContents: {} });
-  });
-
-  it('should assemble the final script with side panel and complex content scripts', async () => {
-    ctx.set('manifest', {
-      name: 'test',
-      version: '1',
-      description: 'desc',
-      raw: {},
-      content_scripts: [
-          { matches: ['*://*/*'], js: ['s1.js'], run_at: 'document_start' },
-          { matches: ['https://google.com/*'], js: ['s2.js'], run_at: 'document_end' },
-          { matches: ['*://github.com/*'], js: ['s3.js'], run_at: 'document_idle' }
-      ],
-      action: { default_popup: 'pop.html' },
-      side_panel: { default_path: 'side.html' },
-      permissions: []
+  it('should assemble with locale and css', async () => {
+    const ctx = new ConversionContext({
+        inputDir: '.', outputFile: 'out.js', target: 'userscript',
+        locale: 'en'
     });
+
+    ctx.set('manifest', {
+      name: 'Test Ext',
+      version: '1.0',
+      description: 'Desc',
+      manifest_version: 3,
+      raw: { name: 'Test Ext' },
+      content_scripts: [{ js: ['s.js'], css: ['c.css'], run_at: 'document_start' }],
+      action: { default_popup: 'p.html' },
+      background_scripts: []
+    });
+
+    ctx.set('assetMap', { 'p.html': '<html></html>' });
     ctx.set('resources', {
-        jsContents: { 's1.js': 'c1', 's2.js': 'c2', 's3.js': 'c3' },
-        cssContents: { 'style.css': 'body{}' }
+      jsContents: { 's.js': 'console.log(1)' },
+      cssContents: { 'c.css': 'body { color: red }' }
     });
 
     const step = new AssembleStep();
     await step.execute(ctx);
-
-    expect(fs.outputFile).toHaveBeenCalled();
-  });
-
-  it('should handle manifest without content scripts or side panel', async () => {
-      ctx.set('manifest', {
-        name: 'test',
-        version: '1',
-        description: 'desc',
-        raw: {},
-        content_scripts: [],
-        action: {},
-        permissions: []
-      });
-      ctx.set('assetMap', {});
-      ctx.set('resources', { jsContents: {}, cssContents: {} });
-
-      const step = new AssembleStep();
-      await step.execute(ctx);
-
-      expect(fs.outputFile).toHaveBeenCalled();
-    });
-
-  it('should handle content scripts without js', async () => {
-      ctx.set('manifest', {
-          name: 'test',
-          version: '1',
-          raw: {},
-          content_scripts: [{ matches: ['*://*/*'], css: ['c.css'] }],
-          action: {}
-      });
-      const step = new AssembleStep();
-      await step.execute(ctx);
-      expect(fs.outputFile).toHaveBeenCalled();
+    expect(fs.outputFile).toHaveBeenCalledWith('out.js', expect.stringContaining('console.log(1)'));
   });
 });

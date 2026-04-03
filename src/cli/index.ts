@@ -33,14 +33,14 @@ export function createCli(argv: string[]) {
         let source = argv.source as string;
         let tempDownloadPath: string | null = null;
 
-        if (source.startsWith('http')) {
-          console.log(chalk.blue('Downloading extension...'));
-          const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
-          tempDownloadPath = path.resolve(process.cwd(), `temp-download-${Date.now()}.zip`);
-          source = await DownloadService.download(url, tempDownloadPath);
-        }
-
         try {
+          if (source.startsWith('http')) {
+            console.error(chalk.blue('Downloading extension...'));
+            const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
+            tempDownloadPath = path.resolve(process.cwd(), `temp-download-${Date.now()}.zip`);
+            source = await DownloadService.download(url, tempDownloadPath);
+          }
+
           await convertExtension({
             inputDir: path.resolve(source),
             outputFile: path.resolve(argv.output as string || 'extension.user.js'),
@@ -49,7 +49,7 @@ export function createCli(argv: string[]) {
             beautify: argv.beautify,
             force: argv.force,
           });
-          console.log(chalk.green.bold('\n✨ Conversion successful!'));
+          console.error(chalk.green.bold('\n✨ Conversion successful!'));
         } catch (error) {
           console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
           process.exit(1);
@@ -65,9 +65,10 @@ export function createCli(argv: string[]) {
       'Download an extension archive',
       (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
       async (argv) => {
-        Logger.showBanner();
         const source = argv.source as string;
-        const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
+        const url = source.startsWith('http')
+            ? (source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source)
+            : DownloadService.getCrxUrl(source);
         const dest = path.resolve(process.cwd(), 'extension.zip');
         await DownloadService.download(url, dest);
         console.log(chalk.green('Downloaded to:'), dest);
@@ -78,7 +79,6 @@ export function createCli(argv: string[]) {
       'Generate a metadata block with @require',
       (yargs) => yargs.positional('userscript', { type: 'string', demandOption: true }),
       async (argv) => {
-        Logger.showBanner();
         const filePath = path.resolve(argv.userscript as string);
         const fileUrl = pathToFileURL(filePath).href;
         console.log('// ==UserScript==');

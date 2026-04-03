@@ -7,7 +7,7 @@ export class Logger {
   constructor(private context: string) {}
 
   static showBanner() {
-      console.log(chalk.blue.bold(`
+      console.error(chalk.blue.bold(`
    __                                                   _       _
   / _|_ __ ___  _ __ ___         _   _ ___  ___ _ __ ___  ___ _ __(_)_ __ | |_
  | |_| '__/ _ \\| '_ \` _ \\ _____ | | | / __|/ _ \\ '__/ __|/ __| '__| | '_ \\| __|

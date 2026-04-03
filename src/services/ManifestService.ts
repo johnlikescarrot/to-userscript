@@ -1,5 +1,5 @@
 import fs from 'fs-extra';
-import { ManifestSchema, Manifest, NormalizedManifest } from '../schemas/ManifestSchema.js';
+import { ManifestSchema, Manifest, NormalizedManifest, ManifestV2, ManifestV3 } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
 
 export class ManifestService {
@@ -28,37 +28,39 @@ export class ManifestService {
       raw: parsed,
     };
 
-    if (parsed.permissions) normalized.permissions.push(...parsed.permissions);
-    if (parsed.optional_permissions) normalized.permissions.push(...parsed.optional_permissions);
-    if (parsed.manifest_version === 3) {
-      const v3 = parsed as any;
-      if (v3.host_permissions) normalized.permissions.push(...v3.host_permissions);
+    if (parsed.permissions) {
+        normalized.permissions.push(...parsed.permissions);
+    }
+    if (parsed.optional_permissions) {
+        normalized.permissions.push(...parsed.optional_permissions);
     }
 
     if (parsed.manifest_version === 2) {
-      const v2 = parsed as any;
+      const v2 = parsed as ManifestV2;
       const browserAction = v2.browser_action;
       const pageAction = v2.page_action;
-      const popup = browserAction?.default_popup || pageAction?.default_popup;
 
       normalized.action = {
-        default_popup: popup,
+        default_popup: browserAction?.default_popup || pageAction?.default_popup,
         default_icon: browserAction?.default_icon,
       };
-      normalized.background_scripts = (v2.background && v2.background.scripts) ? v2.background.scripts : [];
-      normalized.options_page = (v2.options_ui && v2.options_ui.page) ? v2.options_ui.page : v2.options_page;
+      normalized.background_scripts = v2.background?.scripts || [];
+      normalized.options_page = v2.options_ui?.page || v2.options_page;
       normalized.web_accessible_resources = v2.web_accessible_resources || [];
     } else {
-      const v3 = parsed as any;
+      const v3 = parsed as ManifestV3;
+      if (v3.host_permissions) {
+          normalized.permissions.push(...v3.host_permissions);
+      }
       normalized.action = {
         default_popup: v3.action?.default_popup,
         default_icon: v3.action?.default_icon,
       };
-      normalized.background_scripts = (v3.background && v3.background.service_worker) ? [v3.background.service_worker] : [];
-      normalized.options_page = (v3.options_ui && v3.options_ui.page) ? v3.options_ui.page : undefined;
+      normalized.background_scripts = v3.background?.service_worker ? [v3.background.service_worker] : [];
+      normalized.options_page = v3.options_ui?.page;
       normalized.side_panel = v3.side_panel;
       normalized.web_accessible_resources = (v3.web_accessible_resources || [])
-        .flatMap((r: any) => r.resources);
+        .flatMap(r => r.resources);
     }
 
     return normalized;

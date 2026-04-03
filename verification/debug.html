@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <div id="controls"></div>
+  <script>
+    window.GM_registerMenuCommand = (name, callback) => {
+      const btn = document.createElement('button');
+      btn.textContent = name;
+      btn.id = name.replace(/\s+/g, '-').toLowerCase();
+      btn.onclick = callback;
+      document.getElementById('controls').appendChild(btn);
+    };
+    window.GM_listValues = async () => [];
+    window.GM_getValue = async (k, d) => d;
+    window.GM_setValue = async () => {};
+    window.GM_deleteValue = async () => {};
+  </script>
+  <script src="test-script.user.js"></script>
+</body>
+</html>

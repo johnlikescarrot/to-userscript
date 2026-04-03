@@ -9,40 +9,34 @@ describe('PolyfillService', () => {
     vi.clearAllMocks();
   });
 
-  it('should build the polyfill string for userscript', async () => {
+  it('should build the polyfill and use manifest name for script ID', async () => {
     vi.mocked(TemplateService.load).mockImplementation(async (name: string) => {
-        if (name === 'polyfill') return '{{SCRIPT_ID}} {{INJECTED_MANIFEST}} getURL: (path) => ...,';
+        if (name === 'polyfill') return 'ID: {{SCRIPT_ID}} MANIFEST: {{INJECTED_MANIFEST}}';
         return `content of ${name}`;
     });
 
-    const manifest: any = { name: 'test', version: '1' };
+    const manifest: any = { name: 'Transcendent-Extension', version: '1' };
     const res = await PolyfillService.build('userscript', {}, manifest);
 
-    expect(res).toContain('test');
+    expect(res).toContain('ID: transcendent-extension');
+    expect(res).toContain('MANIFEST: {"name":"Transcendent-Extension"');
     expect(res).toContain('content of abstractionLayer.userscript');
-    expect(res).toContain('content of messaging');
-    expect(res).toContain('getURL');
   });
 
-  it('should build for vanilla and postmessage', async () => {
-    vi.mocked(TemplateService.load).mockResolvedValue('template content');
+  it('should build with meaningful properties for vanilla and postmessage', async () => {
+    vi.mocked(TemplateService.load).mockImplementation(async (name: string) => {
+        if (name === 'polyfill') return 'IS_IFRAME: {{IS_IFRAME}}';
+        return `content: ${name}`;
+    });
 
     const manifest: any = { name: 'test' };
 
     const resVanilla = await PolyfillService.build('vanilla', {}, manifest);
-    expect(resVanilla).toBeDefined();
+    expect(resVanilla).toContain('IS_IFRAME: false');
+    expect(resVanilla).toContain('content: abstractionLayer.vanilla');
 
     const resPost = await PolyfillService.build('postmessage', {}, manifest);
-    expect(resPost).toBeDefined();
-  });
-
-  it('should handle template replacement for manifest', async () => {
-    vi.mocked(TemplateService.load).mockImplementation(async (name: string) => {
-        if (name === 'polyfill') return '{{INJECTED_MANIFEST}}';
-        return '';
-    });
-    const manifest: any = { name: 'Injection' };
-    const res = await PolyfillService.build('userscript', {}, manifest);
-    expect(res).toContain('Injection');
+    expect(resPost).toContain('IS_IFRAME: true');
+    expect(resPost).toContain('content: abstractionLayer.postmessage');
   });
 });

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const ContentScriptSchema = z.object({
   matches: z.array(z.string()).optional(),
+  exclude_matches: z.array(z.string()).optional(),
   js: z.array(z.string()).optional(),
   css: z.array(z.string()).optional(),
   run_at: z.enum(['document_start', 'document_end', 'document_idle', 'document-start', 'document-end', 'document-idle']).optional(),
@@ -69,7 +70,12 @@ export const ManifestV3Schema = z.object({
   })).optional(),
 });
 
-export const ManifestSchema = z.union([ManifestV2Schema, ManifestV3Schema]);
+export const ManifestSchema = z.discriminatedUnion('manifest_version', [ManifestV2Schema, ManifestV3Schema]);
+
+export type ContentScript = z.infer<typeof ContentScriptSchema>;
+export type ManifestV2 = z.infer<typeof ManifestV2Schema>;
+export type ManifestV3 = z.infer<typeof ManifestV3Schema>;
+export type Manifest = z.infer<typeof ManifestSchema>;
 
 export interface NormalizedManifest {
   manifest_version: 2 | 3;
@@ -77,7 +83,7 @@ export interface NormalizedManifest {
   version: string;
   description: string;
   icons: Record<string, string>;
-  content_scripts: z.infer<typeof ContentScriptSchema>[];
+  content_scripts: ContentScript[];
   action: {
     default_popup?: string;
     default_icon?: string | Record<string, string>;
@@ -89,10 +95,5 @@ export interface NormalizedManifest {
   background_scripts: string[];
   web_accessible_resources: string[];
   permissions: string[];
-  raw: any;
+  raw: Manifest;
 }
-
-export type ContentScript = z.infer<typeof ContentScriptSchema>;
-export type ManifestV2 = z.infer<typeof ManifestV2Schema>;
-export type ManifestV3 = z.infer<typeof ManifestV3Schema>;
-export type Manifest = z.infer<typeof ManifestSchema>;

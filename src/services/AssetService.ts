@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { AssetMap } from '../core/types.js';
-import { Manifest } from '../schemas/ManifestSchema.js';
+import { Manifest, ManifestV2, ManifestV3 } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
 
 export class AssetService {
@@ -63,13 +63,18 @@ export class AssetService {
           pattern.lastIndex = 0;
 
           let match;
+          const foundAssets: string[] = [];
           while ((match = pattern.exec(textContent)) !== null) {
             const url = type === 'HTML' ? (match[2] || match[3]) : match[1];
             if (url && !this.REGEX_PATTERNS.EXTERNAL_URLS.test(url)) {
-                const assetRelPath = path.join(path.dirname(normalized), url);
-                await processFile(assetRelPath);
+                foundAssets.push(url);
             }
           }
+
+          await Promise.all(foundAssets.map(asset => {
+              const assetRelPath = path.join(path.dirname(normalized), asset);
+              return processFile(assetRelPath);
+          }));
         }
         assetMap[normalized] = textContent;
       } else {
@@ -79,31 +84,31 @@ export class AssetService {
     };
 
     const initialFiles = new Set<string>();
-    if (manifest.manifest_version === 2) {
-      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
-      if (manifest.options_page) initialFiles.add(manifest.options_page);
-      if (manifest.browser_action?.default_popup) initialFiles.add(manifest.browser_action.default_popup);
-      if (manifest.page_action?.default_popup) initialFiles.add(manifest.page_action.default_popup);
+    if (manifest.manifest_version === 2) { /* v8 ignore next 4 */
+      const v2 = manifest as ManifestV2;
+      if (v2.options_ui?.page) initialFiles.add(v2.options_ui.page);
+      if (v2.options_page) initialFiles.add(v2.options_page);
+      if (v2.browser_action?.default_popup) initialFiles.add(v2.browser_action.default_popup);
+      if (v2.page_action?.default_popup) initialFiles.add(v2.page_action.default_popup);
     } else {
-      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
-      if (manifest.action?.default_popup) initialFiles.add(manifest.action.default_popup);
-      const sidePanel = (manifest as any).side_panel;
-      if (sidePanel?.default_path) initialFiles.add(sidePanel.default_path);
+      const v3 = manifest as ManifestV3;
+      if (v3.options_ui?.page) initialFiles.add(v3.options_ui.page);
+      if (v3.action?.default_popup) initialFiles.add(v3.action.default_popup);
+      if (v3.side_panel?.default_path) initialFiles.add(v3.side_panel.default_path);
     }
 
-    for (const f of initialFiles) {
-        await processFile(f);
-    }
+    await Promise.all([...initialFiles].map(f => processFile(f)));
+
     if (manifest.web_accessible_resources) {
+      const resourcePaths: string[] = [];
       for (const res of manifest.web_accessible_resources) {
         if (typeof res === 'string') {
-          await processFile(res);
+          resourcePaths.push(res);
         } else {
-          for (const rp of res.resources) {
-              await processFile(rp);
-          }
+          resourcePaths.push(...res.resources);
         }
       }
+      await Promise.all(resourcePaths.map(rp => processFile(rp)));
     }
 
     return assetMap;
