@@ -1,23 +1,30 @@
+import sys, os
 from playwright.sync_api import sync_playwright
-import os
 
-def run():
+def test_ui():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.on("console", lambda msg: print(f"BROWSER: {msg.text}"))
-        page.on("pageerror", lambda err: print(f"PAGE ERROR: {err}"))
-        path = os.path.abspath("verification/debug.html")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(script_dir, "debug.html")
         page.goto(f"file://{path}")
+
         try:
-            popup_btn = page.wait_for_selector("#extension-popup", timeout=5000)
+            # Trigger popup
+            popup_btn = page.wait_for_selector("#extension-popup")
             popup_btn.click()
-            page.wait_for_timeout(2000)
+
+            # Wait for UI to show
+            page.wait_for_selector("#ext-ui-popup", state="attached", timeout=5000)
+
+            # Take screenshot
             page.screenshot(path="verification/verification.png")
-            print("Visual verification screenshot taken.")
+            print("SUCCESS")
         except Exception as e:
             print(f"FAILED: {e}")
-        browser.close()
+            sys.exit(1)
+        finally:
+            browser.close()
 
 if __name__ == "__main__":
-    run()
+    test_ui()

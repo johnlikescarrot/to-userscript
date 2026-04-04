@@ -1,5 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Debug Verification</title>
+</head>
 <body>
   <div id="controls"></div>
   <script>
@@ -10,6 +14,7 @@
       btn.onclick = callback;
       document.getElementById('controls').appendChild(btn);
     };
+    window.GM_info = { script: { name: "Test Script", version: "1.0.0" } };
     window.GM_listValues = async () => [];
     window.GM_getValue = async (k, d) => d;
     window.GM_setValue = async () => {};

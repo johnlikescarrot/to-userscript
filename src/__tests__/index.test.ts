@@ -37,7 +37,7 @@ describe('Main Entry Point', () => {
     expect(res.success).toBe(true);
   });
 
-  it('should return success: false when inputDir doesn\'t exist', async () => {
+  it('should throw when inputDir does not exist', async () => {
       vi.mocked(fs.pathExists).mockResolvedValue(false as never);
 
       // We don't mock MigrationEngine here to ensure convertExtension fails before running it

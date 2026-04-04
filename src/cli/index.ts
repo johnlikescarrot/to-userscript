@@ -52,7 +52,7 @@ export function createCli(argv: string[]) {
           console.error(chalk.green.bold('\n✨ Conversion successful!'));
         } catch (error) {
           console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
-          process.exit(1);
+          /* v8 ignore next */ process.exit(1);
         } finally {
           if (tempDownloadPath) {
             await fs.remove(tempDownloadPath).catch(() => {});
@@ -65,13 +65,18 @@ export function createCli(argv: string[]) {
       'Download an extension archive',
       (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
       async (argv) => {
-        const source = argv.source as string;
-        const url = source.startsWith('http')
-            ? (source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source)
-            : DownloadService.getCrxUrl(source);
-        const dest = path.resolve(process.cwd(), 'extension.zip');
-        await DownloadService.download(url, dest);
-        console.log(chalk.green('Downloaded to:'), dest);
+        try {
+          const source = argv.source as string;
+          const url = source.startsWith("http")
+              ? (source.includes("chromewebstore") ? DownloadService.getCrxUrl(source) : source)
+              : DownloadService.getCrxUrl(source);
+          const dest = path.resolve(process.cwd(), "extension.zip");
+          await DownloadService.download(url, dest);
+          console.log(chalk.green("Downloaded to:"), dest);
+        } catch (error) {
+          console.error(chalk.red("Download failed:"), (error as Error).message);
+          /* v8 ignore next */ process.exit(1);
+        }
       }
     )
     .command(

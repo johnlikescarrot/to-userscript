@@ -17,9 +17,23 @@ function buildPolyfill({ isBackground = false } = {}) {
   };
 
   // Persistent stores for the session
-  const dynamicRules = [];
+  let dynamicRules = [];
   const sessionStore = {};
   const sidePanelOptions = { path: SIDE_PANEL_PATH, enabled: true };
+
+  const syncDnr = () => {
+    if (typeof GM_webRequest !== 'function') return;
+    const gmRules = dynamicRules.map(rule => {
+        const gmRule = { selector: rule.condition.urlFilter, action: rule.action.type === "block" ? "cancel" : "redirect" };
+        if (rule.action.type === "redirect") {
+            gmRule.action = { redirect: rule.action.redirect.url };
+        }
+        return gmRule;
+    });
+    GM_webRequest(gmRules, (info, message, details) => {
+        _log("Rule matched:", info, message, details);
+    });
+  };
 
   return {
     runtime: {
@@ -41,7 +55,10 @@ function buildPolyfill({ isBackground = false } = {}) {
       getBadgeBackgroundColor: (details, cb) => { if (cb) cb(actionState.badgeBackgroundColor); return Promise.resolve(actionState.badgeBackgroundColor); },
       setPopup: (details) => { actionState.popup = details.popup; return Promise.resolve(); },
       getPopup: (details, cb) => { if (cb) cb(actionState.popup); return Promise.resolve(actionState.popup); },
-      onClicked: { addListener: (l) => BUS.on('action.onClicked', l), removeListener: () => {} }
+      onClicked: {
+        addListener: (l) => BUS.on('action.onClicked', l),
+        removeListener: () => {} // Implementation limitation
+      }
     },
     scripting: {
       executeScript: async (details) => {
@@ -54,7 +71,6 @@ function buildPolyfill({ isBackground = false } = {}) {
           for (const file of details.files) {
             const content = EXTENSION_ASSETS_MAP[file];
             if (content) {
-                // Indirect eval to execute in global scope
                 const result = (0, eval)(content);
                 results.push({ result });
             }
@@ -76,7 +92,7 @@ function buildPolyfill({ isBackground = false } = {}) {
         }
         return Promise.resolve();
       },
-      removeCSS: () => Promise.resolve() // Limitations apply in userscript context
+      removeCSS: () => Promise.resolve()
     },
     sidePanel: {
       setOptions: (options) => {
@@ -85,7 +101,7 @@ function buildPolyfill({ isBackground = false } = {}) {
       },
       open: (options) => {
         const path = options?.path || sidePanelOptions.path;
-        if (path && sidePanelOptions.enabled) _openSidePanel(path);
+        if (path && sidePanelOptions.enabled) showUI(path, "sidepanel");
         return Promise.resolve();
       },
       setPanelBehavior: (behavior) => {
@@ -99,33 +115,20 @@ function buildPolyfill({ isBackground = false } = {}) {
             _warn('GM_webRequest not supported in this userscript manager.');
             return;
         }
-
         if (options.removeRuleIds) {
-            options.removeRuleIds.forEach(id => {
-                const idx = dynamicRules.findIndex(r => r.id === id);
-                if (idx > -1) dynamicRules.splice(idx, 1);
-            });
+            dynamicRules = dynamicRules.filter(r => !options.removeRuleIds.includes(r.id));
         }
-
         if (options.addRules) {
-            const gmRules = options.addRules.map(rule => {
-                const gmRule = { selector: rule.condition.urlFilter, action: rule.action.type };
-                if (rule.action.type === 'redirect') {
-                    gmRule.action = { redirect: rule.action.redirect.url };
-                }
-                return gmRule;
-            });
-            GM_webRequest(gmRules, (info, message, details) => {
-                _log('Rule matched:', info, message, details);
-            });
             dynamicRules.push(...options.addRules);
         }
+        syncDnr();
         return Promise.resolve();
       },
-      getDynamicRules: () => Promise.resolve(dynamicRules)
+      getDynamicRules: () => Promise.resolve(JSON.parse(JSON.stringify(dynamicRules)))
     },
     offscreen: {
       createDocument: async (details) => {
+          if (document.getElementById('offscreen-doc')) return Promise.resolve();
           const iframe = document.createElement('iframe');
           iframe.id = 'offscreen-doc';
           iframe.style.display = 'none';
@@ -143,7 +146,6 @@ function buildPolyfill({ isBackground = false } = {}) {
         let msg = LOCALE_KEYS[key]?.message || key;
         const subArr = Array.isArray(subs) ? subs : [subs];
         subArr.forEach((s, i) => {
-           // Correct regex for $1, $2 placeholders
            msg = msg.replace(new RegExp('\\$' + (i + 1), 'g'), s);
         });
         return msg;
@@ -161,13 +163,24 @@ function buildPolyfill({ isBackground = false } = {}) {
             });
             if (cb) p.then(cb); return p;
         },
-        remove: (k, cb) => {
-            const p = _storageRemove(k).then(() => broadcastStorageChange("local", {}));
-            if (cb) p.then(cb); return p;
+        remove: async (k, cb) => {
+            const keys = Array.isArray(k) ? k : [k];
+            const changes = {};
+            for (const key of keys) {
+                const oldValue = await _storageGet(key).then(r => r[key]);
+                changes[key] = { oldValue, newValue: undefined };
+            }
+            await _storageRemove(k);
+            broadcastStorageChange("local", changes);
+            if (cb) cb();
         },
-        clear: (cb) => {
-            const p = _storageClear().then(() => broadcastStorageChange("local", {}));
-            if (cb) p.then(cb); return p;
+        clear: async (cb) => {
+            const all = await _storageGet(null);
+            const changes = {};
+            for (const k of Object.keys(all)) changes[k] = { oldValue: all[k], newValue: undefined };
+            await _storageClear();
+            broadcastStorageChange("local", changes);
+            if (cb) cb();
         },
         onChanged: { addListener: (l) => storageChangeListeners.add(l), removeListener: (l) => storageChangeListeners.delete(l) }
       },
@@ -180,18 +193,32 @@ function buildPolyfill({ isBackground = false } = {}) {
                 broadcastStorageChange("sync", changes);
             });
             if (cb) p.then(cb); return p;
+        },
+        remove: async (k, cb) => {
+            const keys = Array.isArray(k) ? k : [k];
+            const changes = {};
+            for (const key of keys) {
+                const oldValue = await _storageGet(key).then(r => r[key]);
+                changes[key] = { oldValue, newValue: undefined };
+            }
+            await _storageRemove(k);
+            broadcastStorageChange("sync", changes);
+            if (cb) cb();
+        },
+        clear: async (cb) => {
+            const all = await _storageGet(null);
+            const changes = {};
+            for (const k of Object.keys(all)) changes[k] = { oldValue: all[k], newValue: undefined };
+            await _storageClear();
+            broadcastStorageChange("sync", changes);
+            if (cb) cb();
         }
       },
       session: {
-        get: (keys, cb) => {
-            let res = {};
-            if (keys === null) res = sessionStore;
-            else if (typeof keys === 'string') res[keys] = sessionStore[keys];
-            else if (Array.isArray(keys)) keys.forEach(k => res[k] = sessionStore[k]);
-            else Object.keys(keys).forEach(k => res[k] = sessionStore[k] !== undefined ? sessionStore[k] : keys[k]);
-            const p = Promise.resolve(res);
-            if (cb) p.then(cb);
-            return p;
+        get: (k, cb) => {
+            const res = k === null ? { ...sessionStore } : (typeof k === "string" ? { [k]: sessionStore[k] } : (Array.isArray(k) ? k.reduce((a, b) => ({ ...a, [b]: sessionStore[b] }), {}) : Object.keys(k).reduce((a, b) => ({ ...a, [b]: sessionStore[b] !== undefined ? sessionStore[b] : k[b] }), {})));
+            if (cb) cb(res);
+            return Promise.resolve(res);
         },
         set: (items, cb) => {
             const changes = {};
@@ -200,9 +227,8 @@ function buildPolyfill({ isBackground = false } = {}) {
                 sessionStore[k] = v;
             }
             broadcastStorageChange("session", changes);
-            const p = Promise.resolve();
-            if (cb) p.then(cb);
-            return p;
+            if (cb) cb();
+            return Promise.resolve();
         }
       },
       onChanged: {

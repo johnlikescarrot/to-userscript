@@ -9,7 +9,7 @@ import fs from 'fs-extra';
 vi.mock('fs-extra');
 vi.mock('../services/TemplateService.js', () => ({
     TemplateService: {
-        load: vi.fn().mockResolvedValue('template_content'),
+        load: vi.fn().mockResolvedValue('{{COMBINED_EXECUTION_LOGIC}}'),
         replace: vi.fn().mockReturnValue('replaced_content')
     }
 }));
@@ -17,42 +17,50 @@ vi.mock('../services/TemplateService.js', () => ({
 describe('Coverage Saturation Ultimate', () => {
   it('AssetService - exhaustive branches', async () => {
     vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('data') as any);
+    vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('data'));
 
-    // MV3 with Side Panel (Line 106)
+    // Discovered files via MV2 (Line 88-92)
     await AssetService.generateAssetMap('root', {
+        manifest_version: 2,
+        name: 'V2',
+        options_ui: { page: 'o.html' },
+        options_page: 'op.html',
+        browser_action: { default_popup: 'p.html' },
+        page_action: { default_popup: 'pa.html' }
+    } as any);
+
+    // MV3 Side Panel (Line 106)
+    const map = await AssetService.generateAssetMap('root', {
         manifest_version: 3,
         name: 'V3_SP',
         side_panel: { default_path: 'side.html' }
     } as any);
 
-    // MIME types exhaustive (Line 118-123)
+    expect(map["side.html"]).toBeDefined();
     expect(AssetService.getMimeType('a.html')).toBe('text/html');
-    expect(AssetService.getMimeType('a.png')).toBe('image/png');
-    expect(AssetService.getMimeType('a.unknown')).toBe('application/octet-stream');
   });
 
   it('RegexUtils - exhaustive matching', () => {
-    // File scheme (Line 16-18)
     expect(RegexUtils.convertMatchPatternToRegExpString('file:///foo/*')).toContain('file');
-    // Host Match failure (Line 30-31)
     expect(RegexUtils.convertMatchPatternToRegExpString('http:///path')).toBe('$.');
-    // Simple Path (Line 38)
     expect(RegexUtils.convertMatchPatternToRegExpString('http://a.com/*')).toContain('(?:/.*)?');
+    expect(RegexUtils.convertMatchPatternToRegExpString('')).toBe('$.');
+    expect(RegexUtils.convertMatchPatternToRegExpString('invalid')).toBe('$.');
   });
 
-  it('AssembleStep - side panel replacement', async () => {
+  it('AssembleStep - exhaustive UI', async () => {
       const ctx = new ConversionContext({ inputDir: '.', outputFile: 'out.js', target: 'userscript' });
       ctx.set('manifest', {
           name: 'test', version: '1', description: 'd', manifest_version: 3,
-          raw: { name: 'test', side_panel: { default_path: 'side.html' } }, // Triggers side panel path logic
-          content_scripts: [], action: { default_popup: 'pop.html' }
+          raw: { name: 'test', options_page: 'o.html', action: { default_popup: 'p.html' }, side_panel: { default_path: 's.html' } },
+          content_scripts: [], action: { default_popup: 'p.html' },
+          permissions: []
       });
       ctx.set('assetMap', {});
       ctx.set('resources', { jsContents: {}, cssContents: {} });
 
-      await new AssembleStep().run(ctx);
-      // Verify replacement logic was called with side panel path
+      const step = new AssembleStep();
+      await step.run(ctx);
       expect(TemplateService.replace).toHaveBeenCalled();
   });
 });

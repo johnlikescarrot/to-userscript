@@ -7,14 +7,14 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3_Ready-orange.svg?style=for-the-badge&logo=googlechrome)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 [![Code Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen.svg?style=for-the-badge&logo=vitest)](https://vitest.dev/)
-[![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge&logo=shield-halved)]()
+![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge[![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge&logo=shield-halved)]()logo=shield-halved)logo=shield-halved)
 [![Release Ready](https://img.shields.io/badge/Release-Ready-brightgreen.svg?style=for-the-badge)](https://github.com/Explosion-Scratch/to-userscript)
 
 **"Break the chains of the browser store. Transcend the boundaries of standard extensions."**
 
 `to-userscript` is a high-performance, strictly-typed transformation framework that converts complex Chrome and Firefox extensions into sleek, self-contained userscripts with absolute fidelity.
 
-[Explore Docs](./docs/architecture.md) • [Report Bug](../../issues) • [Request Feature](../../issues)
+[Explore Docs](./docs/architecture.md) • [Report Bug](https://github.com/johnlikescarrot/to-userscript/issues) • [Request Feature](https://github.com/johnlikescarrot/to-userscript/issues)
 
 </div>
 

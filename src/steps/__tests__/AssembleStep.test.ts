@@ -13,7 +13,7 @@ vi.mock('../../services/TemplateService.js', () => ({
         load: vi.fn().mockResolvedValue('{{COMBINED_EXECUTION_LOGIC}} {{INJECTED_MANIFEST}}'),
         replace: vi.fn().mockImplementation((c, r) => {
             let res = c;
-            for (const [k, v] of Object.entries(r)) res = res.replace(k, v);
+            for (const [k, v] of Object.entries(r)) { const re = new RegExp(k.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), "g"); res = res.replace(re, v); }
             return res;
         })
     }
@@ -34,7 +34,8 @@ describe('AssembleStep', () => {
       raw: { name: 'Test Ext' },
       content_scripts: [{ js: ['s.js'], css: ['c.css'], run_at: 'document_start' }],
       action: { default_popup: 'p.html' },
-      background_scripts: []
+      background_scripts: [],
+      permissions: []
     });
 
     ctx.set('assetMap', { 'p.html': '<html></html>' });

@@ -6,17 +6,18 @@ vi.mock('fs-extra');
 
 describe('ResourceService', () => {
   it('should read content scripts and styles and return strings', async () => {
-    vi.mocked(fs.readFile).mockResolvedValue('content' as any);
+    vi.mocked(fs.readFile).mockResolvedValue('content');
 
     const res = await ResourceService.readScriptsAndStyles('root', [
       { js: ['s1.js'], css: ['c1.css'] }
     ]);
 
+    expect(res.cssContents['c1.css']).toBe('content');
     expect(res.jsContents['s1.js']).toBe('content');
   });
 
   it('should read background scripts and return strings', async () => {
-    vi.mocked(fs.readFile).mockResolvedValue('bg-content' as any);
+    vi.mocked(fs.readFile).mockResolvedValue('bg-content');
     const res = await ResourceService.readBackgroundScripts('root', ['bg.js']);
     expect(res['bg.js']).toBe('bg-content');
   });

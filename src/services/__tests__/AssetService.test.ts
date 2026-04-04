@@ -21,6 +21,7 @@ describe('AssetService', () => {
     };
 
     const map = await AssetService.generateAssetMap('root', manifest);
+    expect(map["popup.html"]).toBe("<html><img src=\"a.png\"></html>");
     expect(map['popup.html']).toBeDefined();
     expect(map['style.css']).toBeDefined();
     expect(map['a.png']).toBe(Buffer.from('bin').toString('base64'));
