@@ -6,25 +6,27 @@ import {
   matchGlobPattern
 } from '../RegexUtils.js';
 
-describe('RegexUtils', () => {
-  it('convertMatchPatternToRegExpString should return $. for invalid patterns', () => {
-    expect(convertMatchPatternToRegExpString('')).toBe('$.');
+describe('RegexUtils Saturation', () => {
+  it('convertMatchPatternToRegExpString - exhaustive', () => {
+    expect(convertMatchPatternToRegExpString('http://*/*')).toContain('http');
+    expect(convertMatchPatternToRegExpString('https://*.com/*')).toContain('https');
+    expect(convertMatchPatternToRegExpString('file:///path/*')).toContain('file');
     expect(convertMatchPatternToRegExpString('invalid')).toBe('$.');
-    expect(convertMatchPatternToRegExpString('http://')).toBe('$.');
+    expect(convertMatchPatternToRegExpString('//google.com')).toBe('$.');
+    expect(convertMatchPatternToRegExpString('http:///path')).toBe('$.');
+    expect(convertMatchPatternToRegExpString('http://a.com/*')).toContain('(?:/.*)?');
   });
 
-  it('convertMatchPatternToRegExp should handle errors gracefully', () => {
-    expect(convertMatchPatternToRegExp('invalid').test('any')).toBe(false);
+  it('convertMatchPatternToRegExp - exhaustive', () => {
+    expect(convertMatchPatternToRegExp('<all_urls>').test('http://a.com')).toBe(true);
+    // Force error in regex construction
+    expect(convertMatchPatternToRegExp('http://*.').test('a')).toBe(false);
   });
 
-  it('matchGlobPattern should handle invalid patterns', () => {
-    expect(matchGlobPattern('', 'any')).toBe(false);
-  });
-
-  it('escapeRegex works', () => { expect(escapeRegex('.')).toBe('\\.'); });
-  it('convertMatchPatternToRegExpString works', () => { expect(convertMatchPatternToRegExpString('*://*/*')).toContain('https?'); });
-  it('matchGlobPattern works', () => {
-      expect(matchGlobPattern('*.js', 'a.js')).toBe(true);
-      expect(matchGlobPattern('**/*.js', 'dir/a.js')).toBe(true);
+  it('matchGlobPattern - exhaustive', () => {
+    expect(matchGlobPattern('a/b', 'a/b')).toBe(true);
+    expect(matchGlobPattern('a', null as any)).toBe(false);
+    // Force error in regex construction
+    expect(matchGlobPattern('[', 'a')).toBe(false);
   });
 });

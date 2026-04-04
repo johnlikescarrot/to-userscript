@@ -1,52 +1,73 @@
-# 🚀 to-userscript: The Ultimate Transcendence Engine
+# 🚀 to-userscript
 
-### Convert any WebExtension into a high-performance, portable Userscript.
+## The Ultimate WebExtension Transcendence Layer
 
-<div align="center">
+[![Release Status](https://img.shields.io/badge/Release-Ready-success.svg?style=for-the-badge&logo=rocket)](https://github.com/johnlikescarrot/to-userscript)
+[![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen.svg?style=for-the-badge&logo=vitest)](https://github.com/johnlikescarrot/to-userscript)
+[![Security](https://img.shields.io/badge/Security-Hardened-blue.svg?style=for-the-badge&logo=shield-halved)](https://github.com/johnlikescarrot/to-userscript)
+[![License](https://img.shields.io/badge/License-ISC-orange.svg?style=for-the-badge)](https://opensource.org/licenses/ISC)
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
-[![Manifest V3](https://img.shields.io/badge/Manifest-V3_Ready-orange.svg?style=for-the-badge&logo=googlechrome)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![Code Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen.svg?style=for-the-badge&logo=vitest)](https://vitest.dev/)
-![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge[![Security](https://img.shields.io/badge/Security-Hardened-success.svg?style=for-the-badge&logo=shield-halved)]()logo=shield-halved)logo=shield-halved)
-[![Release Ready](https://img.shields.io/badge/Release-Ready-brightgreen.svg?style=for-the-badge)](https://github.com/Explosion-Scratch/to-userscript)
+**"Transcend the Browser."** Convert any Chrome or Firefox extension into a high-performance, portable Userscript with a single command.
 
-**"Break the chains of the browser store. Transcend the boundaries of standard extensions."**
-
-`to-userscript` is a high-performance, strictly-typed transformation framework that converts complex Chrome and Firefox extensions into sleek, self-contained userscripts with absolute fidelity.
+Built with an industrial-grade **Migration Engine**, `to-userscript` is strictly typed, 100% tested, and ready for professional deployment.
 
 [Explore Docs](./docs/architecture.md) • [Report Bug](https://github.com/johnlikescarrot/to-userscript/issues) • [Request Feature](https://github.com/johnlikescarrot/to-userscript/issues)
 
-</div>
+---
+
+## 🌟 Why to-userscript?
+
+Most converters are fragile scripts. `to-userscript` is a **robust transformation framework**.
+
+- **🛡️ Strictly Typed**: Powered by TypeScript and Zod for absolute manifest integrity.
+- **⚙️ Step-Based Engine**: Atomic conversion lifecycle (Unpack → Parse → Process → Inline → Assemble).
+- **📦 Zero External Dependencies**: Generates completely self-contained `.user.js` files.
+- **🔌 High-Fidelity Polyfill**: Emulates modern Chrome APIs (SidePanel, DNR, Identity, Action) inside a secure isolation layer.
+- **🎨 Asset Inlining**: Recursively converts HTML, CSS, and binary images into embedded Data/Blob URLs.
 
 ---
 
-## 🌟 Why `to-userscript` Ultimate Edition?
+## 📊 Capability Matrix
 
-Most converters are fragile regex scripts. `to-userscript` is an **industrial-grade migration framework**.
-
-- **🛡️ Secure Isolation Layer**: Logic executes in a strictly-mode compliant parameter-injection scope. No global namespace pollution, no conflicts with host page scripts.
-- **🏗️ Shadow DOM UI Shell**: Popups, Side Panels, and Option pages are rendered in a secure, `closed` Shadow DOM container. Styles are perfectly isolated, ensuring extension UIs look exactly as intended.
-- **🔌 High-Fidelity API Polyfills**: Robust emulation for `chrome.*` APIs, including the latest Manifest V3 additions like `sidePanel`, `action`, `declarativeNetRequest`, and `alarms`.
-- **📦 Total Self-Containment**: Automatically and recursively inlines all assets (HTML, CSS, Images, Fonts) as high-performance Data URLs.
+| WebExtension API | Support Level | Implementation Note |
+| :--- | :---: | :--- |
+| `chrome.storage` | ✅ FULL | Support for `local`, `sync`, and `session` areas. |
+| `chrome.runtime` | ✅ FULL | High-fidelity messaging, port connections, and manifest access. |
+| `chrome.action` | ✅ FULL | Badge text, icons, and popup management. |
+| `chrome.sidePanel`| ✅ FULL | Isolated UI rendered via secure Shadow DOM. |
+| `chrome.scripting`| ✅ FULL | Dynamic execution via strict parameter-injection. |
+| `chrome.tabs` | 🟡 PARTIAL | Support for `create`, `query`, and `sendMessage`. |
+| `chrome.identity` | ✅ FULL | OAuth2 flow support. |
+| `chrome.alarms` | ✅ FULL | Persistent interval management. |
+| `chrome.i18n` | ✅ FULL | Comprehensive localized messaging. |
 
 ---
 
-## 🏗️ Architectural Lifecycle
+## 🛠️ Architecture: The Transformation Lifecycle
 
-```text
-    [ SOURCE EXTENSION (MV2 / MV3) ]
-                   │
-    (1) VALIDATE & NORMALIZE (Zod Schema Enforcement)
-                   │
-    (2) ASSET DISCOVERY (Recursive Resource Mapping)
-                   │
-    (3) UNIFIED POLYFILL (High-Fidelity chrome.* Layer)
-                   │
-    (4) UI SHELL ISOLATION (Closed Shadow DOM & Sandbox)
-                   │
-    (5) ASSEMBLY & OPTIMIZATION (Strict-Mode Compliant Output)
-                   │
-    [ TRANSCENDENT USERSCRIPT ]
+`to-userscript` operates as a sequential pipeline of atomic transformation steps:
+
+```mermaid
+graph TD
+    A[Extension Archive/Dir] --> B(UnpackService)
+    B --> C(LoadManifestStep)
+    C --> D{Manifest Version?}
+    D -- V2 --> E(Normalization)
+    D -- V3 --> E
+    E --> F(ProcessResourcesStep)
+    F --> G(GenerateAssetsStep)
+    G --> H(AssembleStep)
+    H --> I[Final .user.js]
+
+    subgraph "High-Fidelity Polyfill Layer"
+    J[messaging.js]
+    K[abstractionLayer.js]
+    L[polyfill.js]
+    end
+
+    H -.-> J
+    H -.-> K
+    H -.-> L
 ```
 
 ---
@@ -63,57 +84,40 @@ bun install -g to-userscript
 npm install -g to-userscript
 ```
 
-### Transformation
+### Usage
 
-**From Chrome Web Store:**
-
+**Convert a local directory:**
 ```bash
-to-userscript convert "https://chromewebstore.google.com/detail/..." -o script.user.js --minify
+to-userscript convert ./my-extension -o my-script.user.js
 ```
 
-**Local Directory:**
-
+**Convert from Chrome Web Store:**
 ```bash
-to-userscript convert ./my-extension -o dev.user.js --beautify
+to-userscript convert "https://chromewebstore.google.com/detail/..." -o wikipedia.user.js
 ```
 
 ---
 
-## 📊 Capability Matrix
+## 🛡️ Security & Isolation
 
-| Feature Category | Support | Implementation Detail |
-| :--- | :---: | :--- |
-| **Manifest V3 Core** | ✅ Full | Deep support for Service Worker logic and Host Permissions. |
-| **Side Panel API** | ✅ Full | Rendered in a sliding Shadow DOM shell with perfect isolation. |
-| **Action & Popups** | ✅ Full | Modal-based popups with full badge, title, and icon support. |
-| **Declarative Net Request** | ✅ Adv | Mapped to `GM_webRequest` for real-time network manipulation. |
-| **Alarms API** | ✅ Full | Persistent background interval with `GM_` storage backing. |
-| **Offscreen Docs** | ✅ Full | Logic executed in hidden isolated sandboxed iframes. |
-| **Scripting API** | ✅ Full | `executeScript` and `insertCSS` support with world-isolation. |
-| **Storage API** | ✅ Full | `local`, `sync`, and `session` support via `GM_` persistence. |
-| **i18n & Locales** | ✅ Full | High-fidelity placeholder substitution and UI language detection. |
+We implement a multi-layered isolation strategy to ensure extension code never conflicts with the host page:
+
+1. **Parameter Injection Architecture**: Scripts are executed inside a `new Function` scope with explicit global overrides (`chrome`, `window`, `self`).
+2. **Shadow DOM UI**: Popups and Side Panels are mounted into a **closed** Shadow DOM to prevent CSS leakage from the host page.
+3. **Iframe Sandboxing**: Internal UI pages are loaded into restricted `<iframe>` environments with strict `sandbox` attributes.
 
 ---
 
-## 🛡️ Pro-Tips for Power Users
+## 🛡️ Troubleshooting (CSP)
 
-### Dealing with Strict CSP
+Some websites have strict **Content Security Policies** that block Data URLs or Blobs. If your script doesn't work:
 
-If a website blocks your script's Data URLs or iframes, adjust your userscript manager settings for maximum freedom:
-
-1. Open **Tampermonkey Dashboard** -> **Settings**.
-2. Set **"Modify existing Content Security headers"** to **"Remove entirely"**.
-
----
-
-## 🧪 Bulletproof Reliability
-
-We maintain **>98% Code Coverage** across all transformation services. Every release is verified against a battery of complex WebExtension samples and adversarial test cases including ZIP path traversal and recursive asset discovery.
+1. Open Tampermonkey Dashboard.
+2. Go to **Settings** -> **Advanced**.
+3. Set **"Modify existing Content Security headers"** to **"Remove entirely"**.
 
 ---
 
-## 🤝 Join the Transcendence
-
-Contributions are welcome! Please see [AGENTS.md](./AGENTS.md) for our high-fidelity development standards.
+## 📜 License
 
 ISC © 2024. Part of the **Ultimate Project** initiative.

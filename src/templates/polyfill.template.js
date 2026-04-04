@@ -20,6 +20,7 @@ function buildPolyfill({ isBackground = false } = {}) {
   let dynamicRules = [];
   const sessionStore = {};
   const sidePanelOptions = { path: SIDE_PANEL_PATH, enabled: true };
+  const injectedStyleIds = new Set();
 
   const syncDnr = () => {
     if (typeof GM_webRequest !== 'function') return;
@@ -57,7 +58,7 @@ function buildPolyfill({ isBackground = false } = {}) {
       getPopup: (details, cb) => { if (cb) cb(actionState.popup); return Promise.resolve(actionState.popup); },
       onClicked: {
         addListener: (l) => BUS.on('action.onClicked', l),
-        removeListener: () => {} // Implementation limitation
+        removeListener: () => {}
       }
     },
     scripting: {
@@ -87,12 +88,21 @@ function buildPolyfill({ isBackground = false } = {}) {
         if (css) {
           const style = document.createElement('style');
           style.textContent = css;
-          style.id = 'ts-injected-css-' + Math.random().toString(36).slice(2);
+          const id = 'ts-injected-css-' + Math.random().toString(36).slice(2);
+          style.id = id;
+          injectedStyleIds.add(id);
           (document.head || document.documentElement).appendChild(style);
         }
         return Promise.resolve();
       },
-      removeCSS: () => Promise.resolve()
+      removeCSS: async (details) => {
+          // Simplistic removal for the userscript context
+          injectedStyleIds.forEach(id => {
+              document.getElementById(id)?.remove();
+          });
+          injectedStyleIds.clear();
+          return Promise.resolve();
+      }
     },
     sidePanel: {
       setOptions: (options) => {
@@ -146,7 +156,7 @@ function buildPolyfill({ isBackground = false } = {}) {
         let msg = LOCALE_KEYS[key]?.message || key;
         const subArr = Array.isArray(subs) ? subs : [subs];
         subArr.forEach((s, i) => {
-           msg = msg.replace(new RegExp('\\$' + (i + 1), 'g'), s);
+           msg = msg.replace(new RegExp('\\\\$' + (i + 1), 'g'), s);
         });
         return msg;
       },
@@ -218,7 +228,7 @@ function buildPolyfill({ isBackground = false } = {}) {
         get: (k, cb) => {
             const res = k === null ? { ...sessionStore } : (typeof k === "string" ? { [k]: sessionStore[k] } : (Array.isArray(k) ? k.reduce((a, b) => ({ ...a, [b]: sessionStore[b] }), {}) : Object.keys(k).reduce((a, b) => ({ ...a, [b]: sessionStore[b] !== undefined ? sessionStore[b] : k[b] }), {})));
             if (cb) cb(res);
-            return Promise.resolve(res);
+            return Promise.resolve(JSON.parse(JSON.stringify(res)));
         },
         set: (items, cb) => {
             const changes = {};

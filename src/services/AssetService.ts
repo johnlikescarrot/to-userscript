@@ -31,33 +31,29 @@ export class AssetService {
       if (!relPath) {
           return;
       }
+
       const fragments = relPath.split(/[?#]/);
       const cleanRelPath = fragments[0];
-      /* v8 ignore next 3 */
       if (!cleanRelPath) {
           return;
       }
+
       const normalized = normalizePath(cleanRelPath);
-      /* v8 ignore next 3 */
-      if (processedFiles.has(normalized)) {
-          return;
-      }
+      if (processedFiles.has(normalized)) return;
+      processedFiles.add(normalized);
 
       const fullPath = path.join(extensionRoot, normalized);
-      const exists = await fs.pathExists(fullPath);
-      /* v8 ignore next 3 */
-      if (!exists) {
-          return;
+      if (!(await fs.pathExists(fullPath))) {
+        processedFiles.delete(normalized);
+        return;
       }
-
-      processedFiles.add(normalized);
 
       const ext = path.extname(normalized).toLowerCase();
       const isText = ['.html', '.htm', '.css', '.js', '.json', '.svg'].includes(ext);
 
       if (isText) {
         let textContent = await fs.readFile(fullPath, 'utf-8');
-        if (ext === '.html' || ext === '.htm' || ext === '.css') {
+        if (['.html', '.htm', '.css'].includes(ext)) {
           const type: 'CSS' | 'HTML' = ext === '.css' ? 'CSS' : 'HTML';
           const pattern = type === 'CSS' ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
           pattern.lastIndex = 0;
@@ -67,14 +63,15 @@ export class AssetService {
           while ((match = pattern.exec(textContent)) !== null) {
             const url = type === 'HTML' ? (match[2] || match[3]) : match[1];
             if (url && !this.REGEX_PATTERNS.EXTERNAL_URLS.test(url)) {
-                foundAssets.push(url);
+              foundAssets.push(url);
             }
           }
 
-          await Promise.all(foundAssets.map(asset => {
+          const assetPromises = foundAssets.map(asset => {
               const assetRelPath = path.join(path.dirname(normalized), asset);
               return processFile(assetRelPath);
-          }));
+          });
+          await Promise.all(assetPromises);
         }
         assetMap[normalized] = textContent;
       } else {
@@ -84,7 +81,7 @@ export class AssetService {
     };
 
     const initialFiles = new Set<string>();
-    if (manifest.manifest_version === 2) { /* v8 ignore next 4 */
+    if (manifest.manifest_version === 2) {
       const v2 = manifest as ManifestV2;
       if (v2.options_ui?.page) initialFiles.add(v2.options_ui.page);
       if (v2.options_page) initialFiles.add(v2.options_page);
@@ -94,21 +91,23 @@ export class AssetService {
       const v3 = manifest as ManifestV3;
       if (v3.options_ui?.page) initialFiles.add(v3.options_ui.page);
       if (v3.action?.default_popup) initialFiles.add(v3.action.default_popup);
-      if (v3.side_panel?.default_path) initialFiles.add(v3.side_panel.default_path);
+      if ((v3 as any).side_panel?.default_path) initialFiles.add((v3 as any).side_panel.default_path);
     }
 
-    await Promise.all([...initialFiles].map(f => processFile(f)));
+    await Promise.all(Array.from(initialFiles).map(f => processFile(f)));
 
     if (manifest.web_accessible_resources) {
-      const resourcePaths: string[] = [];
+      const warPromises: Promise<void>[] = [];
       for (const res of manifest.web_accessible_resources) {
         if (typeof res === 'string') {
-          resourcePaths.push(res);
+          warPromises.push(processFile(res));
         } else {
-          resourcePaths.push(...res.resources);
+          for (const rp of res.resources) {
+            warPromises.push(processFile(rp));
+          }
         }
       }
-      await Promise.all(resourcePaths.map(rp => processFile(rp)));
+      await Promise.all(warPromises);
     }
 
     return assetMap;
@@ -116,9 +115,7 @@ export class AssetService {
 
   static getMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
-    const mime = this.MIME_MAP[ext];
     /* v8 ignore next */
-    if (mime) return mime;
-    return 'application/octet-stream';
+    return this.MIME_MAP[ext] || 'application/octet-stream';
   }
 }

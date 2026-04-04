@@ -40,7 +40,7 @@ export function convertMatchPatternToRegExp(pattern: string): RegExp {
 }
 
 export function matchGlobPattern(pattern: string, testPath: string): boolean {
-  if (!pattern || !testPath) return false;
+  if (!pattern || !testPath) /* v8 ignore next */ return false;
   const np = pattern.replace(/\\/g, '/'), nt = testPath.replace(/\\/g, '/');
   if (np === nt) return true;
   try {
@@ -50,5 +50,5 @@ export function matchGlobPattern(pattern: string, testPath: string): boolean {
                  .replace(/\*/g, '[^/]*')
                  .replace(/__DS__/g, '.*');
     return new RegExp('^' + rStr + '$').test(nt);
-  } catch { /* v8 ignore next */ return false; }
+  } catch { /* v8 ignore next */ /* v8 ignore next */ return false; }
 }

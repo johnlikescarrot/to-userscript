@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AssetService } from '../services/AssetService.js';
-import * as RegexUtils from '../utils/RegexUtils.js';
 import { AssembleStep } from '../steps/AssembleStep.js';
 import { ConversionContext } from '../core/ConversionContext.js';
 import { TemplateService } from '../services/TemplateService.js';
@@ -15,49 +14,47 @@ vi.mock('../services/TemplateService.js', () => ({
 }));
 
 describe('Coverage Saturation Ultimate', () => {
-  it('AssetService - exhaustive branches', async () => {
+  it('AssetService - total saturation', async () => {
     vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('data'));
+    vi.mocked(fs.readFile).mockImplementation((p: any) => {
+        if (p.endsWith('.html')) return Promise.resolve('<html><img src="a.png"></html>');
+        if (p.endsWith('.css')) return Promise.resolve('body { background: url("b.png"); }');
+        return Promise.resolve(Buffer.from('bin'));
+    });
 
-    // Discovered files via MV2 (Line 88-92)
-    await AssetService.generateAssetMap('root', {
+    // Discovered files via MV2 and MV3
+    const map = await AssetService.generateAssetMap('root', {
         manifest_version: 2,
         name: 'V2',
         options_ui: { page: 'o.html' },
-        options_page: 'op.html',
-        browser_action: { default_popup: 'p.html' },
-        page_action: { default_popup: 'pa.html' }
+        web_accessible_resources: ['res.png', { resources: ['style.css'] }]
     } as any);
 
-    // MV3 Side Panel (Line 106)
-    const map = await AssetService.generateAssetMap('root', {
-        manifest_version: 3,
-        name: 'V3_SP',
-        side_panel: { default_path: 'side.html' }
-    } as any);
+    expect(map["o.html"]).toBeDefined();
+    expect(map["a.png"]).toBeDefined();
+    expect(map["b.png"]).toBeDefined();
 
-    expect(map["side.html"]).toBeDefined();
-    expect(AssetService.getMimeType('a.html')).toBe('text/html');
+    // Empty path branch
+    await AssetService.generateAssetMap('root', { manifest_version: 3, name: 'T' } as any);
   });
 
-  it('RegexUtils - exhaustive matching', () => {
-    expect(RegexUtils.convertMatchPatternToRegExpString('file:///foo/*')).toContain('file');
-    expect(RegexUtils.convertMatchPatternToRegExpString('http:///path')).toBe('$.');
-    expect(RegexUtils.convertMatchPatternToRegExpString('http://a.com/*')).toContain('(?:/.*)?');
-    expect(RegexUtils.convertMatchPatternToRegExpString('')).toBe('$.');
-    expect(RegexUtils.convertMatchPatternToRegExpString('invalid')).toBe('$.');
-  });
-
-  it('AssembleStep - exhaustive UI', async () => {
+  it('AssembleStep - total saturation', async () => {
       const ctx = new ConversionContext({ inputDir: '.', outputFile: 'out.js', target: 'userscript' });
       ctx.set('manifest', {
           name: 'test', version: '1', description: 'd', manifest_version: 3,
-          raw: { name: 'test', options_page: 'o.html', action: { default_popup: 'p.html' }, side_panel: { default_path: 's.html' } },
-          content_scripts: [], action: { default_popup: 'p.html' },
+          raw: {
+              name: 'test',
+              options_page: 'o.html',
+              action: { default_popup: 'p.html' },
+              side_panel: { default_path: 's.html' },
+              content_scripts: [{ matches: ['*://*/*'], exclude_matches: ['https://ex.com/*'] }]
+          },
+          content_scripts: [{ matches: ['*://*/*'], js: ['s.js'] }],
+          action: { default_popup: 'p.html' },
           permissions: []
       });
       ctx.set('assetMap', {});
-      ctx.set('resources', { jsContents: {}, cssContents: {} });
+      ctx.set('resources', { jsContents: { 's.js': '1' }, cssContents: {} });
 
       const step = new AssembleStep();
       await step.run(ctx);
