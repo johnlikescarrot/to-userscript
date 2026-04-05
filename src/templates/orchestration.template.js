@@ -24,7 +24,7 @@ function _createAssetUrl(path = "") {
   if (path.startsWith("/")) path = path.slice(1);
   const assets = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
   const assetData = assets[path];
-  if (typeof data === "undefined" && typeof assetData === "undefined") return path;
+  if (typeof assetData === "undefined") return path;
 
   const ext = "." + (path.split(".").pop() || "").toLowerCase();
   const mimeMap = {{MIME_MAP}};

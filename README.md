@@ -61,14 +61,6 @@ to-userscript convert ./my-extension -o my-script.user.js --beautify
 ## 🛠️ Architecture: The Migration Engine
 
 **Summary of Conversion Pipeline:**
-1. **Unpack**: Extracts extension contents from URL, ZIP, or directory. Uses system temporary storage for safety.
-2. **LoadManifestStep**: Normalizes and validates V2/V3 manifests.
-3. **ProcessResourcesStep**: Reads and maps all JavaScript and CSS resources.
-4. **GenerateAssetsStep**: Recursively inlines assets (HTML, CSS, images) into a virtual map.
-5. **AssembleStep**: Performs polyfill injection and produces the final .user.js.
-
-```mermaid
-**Summary of Conversion Pipeline:**
 1. **Unpack**: Extracts extension source (URL, ZIP, or Dir) to a secure temporary directory.
 2. **LoadManifestStep**: Validates and normalizes V2 or V3 manifests into a canonical structure.
 3. **ProcessResourcesStep**: Maps all internal JavaScript and CSS resources defined in the manifest.
@@ -76,6 +68,7 @@ to-userscript convert ./my-extension -o my-script.user.js --beautify
 5. **AssembleStep**: Dynamically detects required `@grant` permissions, injects the Unified Polyfill Layer, and produces the self-contained `.user.js` file.
 
 <!-- Pipeline diagram: Extension Source -> UnpackService -> LoadManifestStep -> ProcessResourcesStep -> GenerateAssetsStep -> AssembleStep -> Final .user.js -->
+```mermaid
 graph TD
     A[Extension Source] -->|URL/ZIP/Dir| B(UnpackService)
     B --> C{LoadManifestStep}

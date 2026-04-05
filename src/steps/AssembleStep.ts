@@ -98,44 +98,48 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{MIME_MAP}}': JSON.stringify(AssetService.MIME_MAP)
     });
 
-    // Metadata generation with @grant detection
-    let metadata = [
-        '// ==UserScript==',
-        `// @name        ${manifest.name}`,
-        `// @version     ${manifest.version}`,
-        `// @description ${manifest.description || 'Converted extension'}`,
-        '// @grant       GM_setValue',
-        '// @grant       GM_getValue',
-        '// @grant       GM_deleteValue',
-        '// @grant       GM_listValues',
-        '// @grant       GM_xmlhttpRequest',
-        '// @grant       GM_openInTab',
-        '// @grant       GM_registerMenuCommand',
-        '// @grant       Notification'
-    ];
+    let header = '';
+    if (target === 'userscript') {
+        // Metadata sanitization to prevent injection
+        const sanitize = (s: any) => (s || '').toString().replace(/[\r\n]/g, ' ').trim();
 
-    const combinedCode = mainPolyfill + finalPayload;
-    if (combinedCode.includes('GM_webRequest')) {
-        metadata.push('// @grant       GM_webRequest');
-    }
-    if (combinedCode.includes('GM_cookie')) {
-        metadata.push('// @grant       GM_cookie');
-    }
+        const metadata = [
+            '// ==UserScript==',
+            `// @name        ${sanitize(manifest.name)}`,
+            `// @version     ${sanitize(manifest.version)}`,
+            `// @description ${sanitize(manifest.description || 'Converted extension')}`,
+            '// @grant       GM_setValue',
+            '// @grant       GM_getValue',
+            '// @grant       GM_deleteValue',
+            '// @grant       GM_listValues',
+            '// @grant       GM_xmlhttpRequest',
+            '// @grant       GM_openInTab',
+            '// @grant       GM_registerMenuCommand',
+            '// @grant       Notification'
+        ];
 
-    // Generate matches
-    const matches = new Set<string>();
-    manifest.content_scripts.forEach(cs => cs.matches?.forEach(m => matches.add(m)));
-    if (matches.size > 0) {
-        matches.forEach(m => metadata.push(`// @match       ${m}`));
-    } else {
-        metadata.push('// @match       *://*/*');
-    }
+        const combinedCode = mainPolyfill + finalPayload;
+        if (combinedCode.includes('GM_webRequest')) {
+            metadata.push('// @grant       GM_webRequest');
+        }
+        if (combinedCode.includes('GM_cookie')) {
+            metadata.push('// @grant       GM_cookie');
+        }
 
-    metadata.push('// ==/UserScript==');
+        const matches = new Set<string>();
+        manifest.content_scripts.forEach(cs => cs.matches?.forEach(m => matches.add(m)));
+        if (matches.size > 0) {
+            matches.forEach(m => metadata.push(`// @match       ${m}`));
+        } else {
+            metadata.push('// @match       *://*/*');
+        }
+
+        metadata.push('// ==/UserScript==');
+        header = metadata.join('\n') + '\n';
+    }
 
     const wrapper = `
-${metadata.join('\n')}
-
+${header}
 (function() {
     'use strict';
     const SCRIPT_NAME = ${JSON.stringify(manifest.name)};
