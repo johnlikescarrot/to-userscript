@@ -27,9 +27,14 @@ describe('Industrial Transformation: Elite Verification Suite', () => {
     vi.mocked(fs.stat).mockResolvedValue({ isFile: () => false } as any);
     vi.mocked(fs.readFile).mockImplementation(async (path: any) => {
         if (path.toString().endsWith('manifest.json')) {
-            return JSON.stringify({ manifest_version: 3, name: 't', version: '1' });
+            return JSON.stringify({
+              manifest_version: 3,
+              name: 't',
+              version: '1',
+              content_scripts: [{ matches: ['*://test.com/*'], js: ['c.js'] }]
+            });
         }
-        return '{{SCRIPT_ID}} {{EXTENSION_ASSETS_MAP}} {{LOCALE}} {{INJECTED_MANIFEST}}';
+        return '{{SCRIPT_ID}} {{EXTENSION_ASSETS_MAP}} {{LOCALE}} {{INJECTED_MANIFEST}} {{MIME_MAP}}';
     });
     vi.mocked(fs.outputFile).mockResolvedValue(undefined);
     vi.mocked(fs.remove).mockResolvedValue(undefined);
@@ -42,7 +47,11 @@ describe('Industrial Transformation: Elite Verification Suite', () => {
     const result = await convertExtension({ inputDir: 'a.crx', outputFile: 'o.user.js', target: 'userscript' });
 
     expect(result.success).toBe(true);
-    expect(fs.outputFile).toHaveBeenCalledWith('o.user.js', expect.stringContaining('window.EXTENSION_ASSETS_MAPS'));
+    const output = vi.mocked(fs.outputFile).mock.calls[0][1] as string;
+
+    expect(output).toContain('// ==UserScript==');
+    expect(output).toContain('// @match       *://test.com/*');
+    expect(output).toContain('window.EXTENSION_ASSETS_MAPS');
     expect(fs.remove).toHaveBeenCalled();
 
     // Verify BEST-EFFORT cleanup (doesn't throw if remove fails)

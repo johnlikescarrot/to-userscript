@@ -3,6 +3,7 @@ import { ConversionContext } from '../core/ConversionContext.js';
 import { PolyfillService } from '../services/PolyfillService.js';
 import { TemplateService } from '../services/TemplateService.js';
 import { ManifestService } from '../services/ManifestService.js';
+import { AssetService } from '../services/AssetService.js';
 import { AssetMap, ResourceResult } from '../core/types.js';
 import { NormalizedManifest } from '../schemas/ManifestSchema.js';
 import fs from 'fs-extra';
@@ -21,7 +22,6 @@ export class AssembleStep extends Step {
     const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    // Industrial-grade locale ingestion
     const requestedLocale = locale || (manifest.raw as any).default_locale || 'en';
     const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
@@ -81,8 +81,10 @@ async function executeAllScripts(globalThis, extensionCssData) {
 }
 `;
 
-    const finalScript = TemplateService.replace(orchestrationTemplate, {
-      '{{SCRIPT_ID}}': ManifestService.getInternalId(manifest),
+    const scriptId = ManifestService.getInternalId(manifest);
+
+    const finalPayload = TemplateService.replace(orchestrationTemplate, {
+      '{{SCRIPT_ID}}': scriptId,
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
       '{{COMBINED_EXECUTION_LOGIC}}': combinedExecutionLogic,
@@ -92,10 +94,48 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{EXTENSION_ICON}}': 'null',
       '{{LOCALE}}': JSON.stringify(localeMessages),
       '{{USED_LOCALE}}': JSON.stringify(usedLocale),
-      '{{EXTENSION_ASSETS_MAP}}': JSON.stringify(assetMap)
+      '{{EXTENSION_ASSETS_MAP}}': JSON.stringify(assetMap),
+      '{{MIME_MAP}}': JSON.stringify(AssetService.MIME_MAP)
     });
 
+    // Metadata generation with @grant detection
+    let metadata = [
+        '// ==UserScript==',
+        `// @name        ${manifest.name}`,
+        `// @version     ${manifest.version}`,
+        `// @description ${manifest.description || 'Converted extension'}`,
+        '// @grant       GM_setValue',
+        '// @grant       GM_getValue',
+        '// @grant       GM_deleteValue',
+        '// @grant       GM_listValues',
+        '// @grant       GM_xmlhttpRequest',
+        '// @grant       GM_openInTab',
+        '// @grant       GM_registerMenuCommand',
+        '// @grant       Notification'
+    ];
+
+    const combinedCode = mainPolyfill + finalPayload;
+    if (combinedCode.includes('GM_webRequest')) {
+        metadata.push('// @grant       GM_webRequest');
+    }
+    if (combinedCode.includes('GM_cookie')) {
+        metadata.push('// @grant       GM_cookie');
+    }
+
+    // Generate matches
+    const matches = new Set<string>();
+    manifest.content_scripts.forEach(cs => cs.matches?.forEach(m => matches.add(m)));
+    if (matches.size > 0) {
+        matches.forEach(m => metadata.push(`// @match       ${m}`));
+    } else {
+        metadata.push('// @match       *://*/*');
+    }
+
+    metadata.push('// ==/UserScript==');
+
     const wrapper = `
+${metadata.join('\n')}
+
 (function() {
     'use strict';
     const SCRIPT_NAME = ${JSON.stringify(manifest.name)};
@@ -115,7 +155,7 @@ async function executeAllScripts(globalThis, extensionCssData) {
     ${mainPolyfill}
 
     // --- Logic
-    ${finalScript}
+    ${finalPayload}
 
     main().catch(e => _error('Initialization error', e));
 })();

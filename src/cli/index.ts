@@ -52,7 +52,7 @@ const parser = yargs(hideBin(process.argv))
         console.log(chalk.green.bold('\n✨ Conversion successful!'));
       } catch (error) {
         console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
-        process.exit(1);
+        throw error; // Rethrow to ensure non-zero exit and properly handled by parseAsync
       } finally {
         if (tempDownloadPath) {
           await fs.remove(tempDownloadPath).catch(() => {});
@@ -65,11 +65,16 @@ const parser = yargs(hideBin(process.argv))
     'Download an extension archive',
     (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
     async (argv) => {
-      const source = argv.source as string;
-      const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
-      const dest = path.resolve(process.cwd(), 'extension.zip');
-      await DownloadService.download(url, dest);
-      console.log(chalk.green('Downloaded to:'), dest);
+      try {
+        const source = argv.source as string;
+        const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
+        const dest = path.resolve(process.cwd(), 'extension.zip');
+        await DownloadService.download(url, dest);
+        console.log(chalk.green('Downloaded to:'), dest);
+      } catch (error) {
+        console.error(chalk.red.bold('\n❌ Download failed:'), (error as Error).message);
+        process.exit(1);
+      }
     }
   )
   .command(
@@ -77,12 +82,26 @@ const parser = yargs(hideBin(process.argv))
     'Generate a metadata block with @require',
     (yargs) => yargs.positional('userscript', { type: 'string', demandOption: true }),
     async (argv) => {
-      const filePath = path.resolve(argv.userscript as string);
-      const fileUrl = pathToFileURL(filePath).href;
-      console.log('// ==UserScript==');
-      console.log('// @name        Requirement');
-      console.log(`// @require     ${fileUrl}`);
-      console.log('// ==/UserScript==');
+      try {
+        const filePath = path.resolve(argv.userscript as string);
+        const fileUrl = pathToFileURL(filePath).href;
+        console.log('// ==UserScript==');
+        console.log('// @name        Requirement');
+        console.log(`// @require     ${fileUrl}`);
+        console.log('// ==/UserScript==');
+      } catch (error) {
+        console.error(chalk.red.bold('\n❌ Error:'), (error as Error).message);
+        process.exit(1);
+      }
     }
   )
-  .help().alias('h', 'help').parse();
+  .help().alias('h', 'help');
+
+// Execute CLI
+(async () => {
+  try {
+    await parser.parseAsync();
+  } catch (err) {
+    process.exit(1);
+  }
+})();

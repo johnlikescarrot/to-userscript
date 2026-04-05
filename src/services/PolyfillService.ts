@@ -33,7 +33,7 @@ function _base64ToUint8Array(base64) {
       getURL: (path) => {
         if (!path) return "";
         let cleanPath = path.startsWith("/") ? path.substring(1) : path;
-        const assets = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
+        const assets = window.EXTENSION_ASSETS_MAPS["${internalId}"] || {};
         const data = assets[cleanPath];
         if (typeof data === "undefined") return path;
 
@@ -47,17 +47,19 @@ function _base64ToUint8Array(base64) {
       }
     `;
 
+    // Order matters: replace polyfill internal placeholders before full template injection
+    let polyfillBody = polyfillTemplate
+      .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
+      .replace(/{{SCRIPT_ID}}/g, internalId)
+      .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
+      .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest));
+
     let combined = `
 ${decodingHelper}
 ${messaging}
 ${abstraction}
 
-${polyfillTemplate
-  .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
-  .replace(/{{SCRIPT_ID}}/g, internalId)
-  .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
-  .replace('{{EXTENSION_ASSETS_MAP}}', JSON.stringify(assetMap))
-  .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest))}
+${polyfillBody}
 `;
 
     return combined;

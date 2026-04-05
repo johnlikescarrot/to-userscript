@@ -71,7 +71,8 @@ function buildPolyfill({ isBackground = false } = {}) {
           if (files) {
               const results = [];
               for (const file of files) {
-                  const content = assetsMap[file];
+                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+                  const content = assetsMap[cleanPath];
                   if (content) {
                       try {
                           const res = new Function(content)();
@@ -92,11 +93,12 @@ function buildPolyfill({ isBackground = false } = {}) {
           }
           if (files) {
               for (const file of files) {
-                  const content = assetsMap[file];
+                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+                  const content = assetsMap[cleanPath];
                   if (content) {
                       const style = document.createElement('style');
                       style.textContent = content;
-                      style.setAttribute('data-scripting-file', file);
+                      style.setAttribute('data-scripting-file', cleanPath);
                       (document.head || document.documentElement).appendChild(style);
                   }
               }
@@ -109,7 +111,8 @@ function buildPolyfill({ isBackground = false } = {}) {
           }
           if (files) {
               for (const file of files) {
-                  const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(file)}"]`);
+                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+                  const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(cleanPath)}"]`);
                   for (const s of styles) s.remove();
               }
           }
@@ -162,6 +165,8 @@ function buildPolyfill({ isBackground = false } = {}) {
     },
     action: {
         setBadgeText: (d) => { _log("Badge set:", d.text); return Promise.resolve(); },
+        setBadgeBackgroundColor: (d) => { _log("Badge color set:", d.color); return Promise.resolve(); },
+        setTitle: (d) => { _log("Title set:", d.title); return Promise.resolve(); },
         setIcon: (d) => { _log("Icon set:", d); return Promise.resolve(); }
     },
     permissions: {

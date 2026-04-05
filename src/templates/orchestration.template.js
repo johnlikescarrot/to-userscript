@@ -24,16 +24,16 @@ function _createAssetUrl(path = "") {
   if (path.startsWith("/")) path = path.slice(1);
   const assets = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
   const assetData = assets[path];
-  if (typeof assetData === "undefined") return path;
+  if (typeof data === "undefined" && typeof assetData === "undefined") return path;
 
   const ext = "." + (path.split(".").pop() || "").toLowerCase();
+  const mimeMap = {{MIME_MAP}};
+  const mimeType = mimeMap[ext] || "application/octet-stream";
 
-  // Use a minimal mime map here or inject one if needed.
-  // For orchestration, we prioritize text-detection for object URLs.
-  const isText = ["html", "htm", "js", "css", "json", "svg"].some(t => path.endsWith(t));
+  const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
 
-  if (isText) return URL.createObjectURL(new Blob([assetData], { type: "text/plain" }));
-  return URL.createObjectURL(_base64ToBlob(assetData));
+  if (isText) return URL.createObjectURL(new Blob([assetData], { type: mimeType }));
+  return URL.createObjectURL(_base64ToBlob(assetData, mimeType));
 }
 
 {{COMBINED_EXECUTION_LOGIC}}
