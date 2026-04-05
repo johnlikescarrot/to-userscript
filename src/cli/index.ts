@@ -3,8 +3,8 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import path from 'path';
+import { pathToFileURL } from 'url';
 import os from 'os';
-import { pathToFileURL, fileURLToPath } from 'url';
 import fs from 'fs-extra';
 import chalk from 'chalk';
 import { convertExtension } from '../index.js';
@@ -36,8 +36,7 @@ const parser = yargs(hideBin(process.argv))
       try {
         if (source.startsWith('http')) {
           console.log(chalk.blue('Downloading extension...'));
-          const isCws = source.includes('chromewebstore');
-          const url = isCws ? DownloadService.getCrxUrl(source) : source;
+          const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
           tempDownloadPath = path.resolve(os.tmpdir(), `to-userscript-download-${Date.now()}.zip`);
           source = await DownloadService.download(url, tempDownloadPath);
         }
@@ -53,7 +52,7 @@ const parser = yargs(hideBin(process.argv))
         console.log(chalk.green.bold('\n✨ Conversion successful!'));
       } catch (error) {
         console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
-        throw error;
+        process.exit(1);
       } finally {
         if (tempDownloadPath) {
           await fs.remove(tempDownloadPath).catch(() => {});
@@ -67,8 +66,7 @@ const parser = yargs(hideBin(process.argv))
     (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
     async (argv) => {
       const source = argv.source as string;
-      const isUrl = source.startsWith('http');
-      const url = isUrl ? source : DownloadService.getCrxUrl(source);
+      const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
       const dest = path.resolve(process.cwd(), 'extension.zip');
       await DownloadService.download(url, dest);
       console.log(chalk.green('Downloaded to:'), dest);
@@ -87,31 +85,4 @@ const parser = yargs(hideBin(process.argv))
       console.log('// ==/UserScript==');
     }
   )
-  .help().alias('h', 'help');
-
-export async function runCli(args: string[]) {
-  return await parser.parseAsync(args);
-}
-
-export async function bootstrap() {
-  try {
-    await runCli(process.argv.slice(2));
-  } catch (error) {
-    console.error(chalk.red.bold('\n❌ Fatal error:'), (error as Error).message);
-    process.exit(1);
-  }
-}
-
-export const isMain = (url: string, scriptPath: string) => {
-  if (!url || !scriptPath) return false;
-  try {
-    const pathFromUrl = fileURLToPath(url);
-    return pathFromUrl === path.resolve(scriptPath);
-  } catch {
-    return false;
-  }
-};
-
-if (isMain(import.meta.url, process.argv[1])) {
-  bootstrap();
-}
+  .help().alias('h', 'help').parse();

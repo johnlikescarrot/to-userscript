@@ -2,8 +2,7 @@ function buildPolyfill({ isBackground = false } = {}) {
   const BUS = createEventBus("{{SCRIPT_ID}}");
   const RUNTIME = createRuntime(isBackground ? "background" : "tab", BUS);
 
-  // Scoped assets resolution
-  const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"];
+  const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
 
   const storageChangeListeners = new Set();
   function broadcastStorageChange(changes, areaName) {
@@ -16,8 +15,8 @@ function buildPolyfill({ isBackground = false } = {}) {
     });
   }
 
-  // Stateful DNR Rule Management
-  let dynamicRules = [];
+  // Stateful DNR rule management
+  let _dynamicRules = [];
 
   const polyfill = {
     runtime: {
@@ -26,14 +25,17 @@ function buildPolyfill({ isBackground = false } = {}) {
       getURL: (path) => _createAssetUrl(path),
       openOptionsPage: () => {
         if (OPTIONS_PAGE_PATH) _openTab(_createAssetUrl(OPTIONS_PAGE_PATH), true);
-        else console.warn("[to-userscript] No options page defined.");
+        else _warn("No options page defined.");
       },
       id: "{{SCRIPT_ID}}"
     },
     i18n: {
       getMessage: (key, subs = []) => {
         let msg = LOCALE_KEYS[key]?.message || key;
-        (Array.isArray(subs) ? subs : [subs]).forEach((s, i) => msg = msg.replace(`$${i+1}`, s));
+        const subList = (Array.isArray(subs) ? subs : [subs]);
+        subList.forEach((s, i) => {
+            msg = msg.replace(new RegExp(`\\$${i+1}`, 'g'), s);
+        });
         return msg;
       },
       getUILanguage: () => USED_LOCALE || "en"
@@ -55,51 +57,42 @@ function buildPolyfill({ isBackground = false } = {}) {
         removeListener: (l) => storageChangeListeners.delete(l)
       }
     },
-    tabs: {
-      create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
-      query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
-      sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
-    },
     scripting: {
-      executeScript: async (details = {}) => {
-          const { target, func, files, args } = details;
-          try {
-              if (func) {
-                  // Truly isolated execution using Function constructor to break polyfill closure
-                  const wrapper = new Function('args', `return (${func.toString()})(...args)`);
-                  const res = await wrapper(args || []);
-                  return [{ result: res, frameId: 0 }];
+      executeScript: async ({ target, func, files, args } = {}) => {
+          if (func) {
+              try {
+                  const isolatedFunc = new Function('args', `return (${func.toString()})(...args)`);
+                  const res = isolatedFunc(args || []);
+                  return [{ result: await res, frameId: 0 }];
+              } catch (err) {
+                  return Promise.reject(err);
               }
-              if (files) {
-                  let lastRes = undefined;
-                  for (const file of files) {
-                      const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                      const content = assetsMap[cleanPath];
-                      if (content) {
-                          // Execute file scripts in global isolated scope
-                          lastRes = new Function(content)();
-                      } else {
-                          console.error(`[to-userscript] Script file not found in assets: ${file}`);
-                      }
-                  }
-                  return [{ result: lastRes, frameId: 0 }];
-              }
-              return [];
-          } catch (err) {
-              throw err;
           }
+          if (files) {
+              const results = [];
+              for (const file of files) {
+                  const content = assetsMap[file];
+                  if (content) {
+                      try {
+                          const res = new Function(content)();
+                          results.push({ result: await res, frameId: 0 });
+                      } catch (e) { _error("executeScript file error:", e); }
+                  }
+              }
+              return results;
+          }
+          return [];
       },
-      insertCSS: async ({ css, files } = {}) => {
+      insertCSS: async ({ target, css, files } = {}) => {
           if (css) {
               const style = document.createElement('style');
               style.textContent = css;
-              style.setAttribute('data-scripting-css', '');
+              style.setAttribute('data-scripting-css', 'true');
               (document.head || document.documentElement).appendChild(style);
           }
           if (files) {
               for (const file of files) {
-                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                  const content = assetsMap[cleanPath];
+                  const content = assetsMap[file];
                   if (content) {
                       const style = document.createElement('style');
                       style.textContent = content;
@@ -116,7 +109,6 @@ function buildPolyfill({ isBackground = false } = {}) {
           }
           if (files) {
               for (const file of files) {
-                  // Direct attribute-equals selection for O(1) removal
                   const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(file)}"]`);
                   for (const s of styles) s.remove();
               }
@@ -124,37 +116,33 @@ function buildPolyfill({ isBackground = false } = {}) {
       }
     },
     declarativeNetRequest: {
-        updateDynamicRules: ({ addRules, removeRuleIds } = {}) => {
-            if (removeRuleIds && removeRuleIds.length > 0) {
-                dynamicRules = dynamicRules.filter(r => !removeRuleIds.includes(r.id));
-            }
-            if (addRules && addRules.length > 0) {
-                const newIds = addRules.map(r => r.id);
-                dynamicRules = dynamicRules.filter(r => !newIds.includes(r.id));
-                dynamicRules = [...dynamicRules, ...addRules];
-            }
+      updateDynamicRules: ({ addRules = [], removeRuleIds = [] } = {}) => {
+        _dynamicRules = _dynamicRules.filter(r => !removeRuleIds.includes(r.id));
+        addRules.forEach(r => {
+            _dynamicRules = _dynamicRules.filter(dr => dr.id !== r.id);
+            _dynamicRules.push({ ...r });
+        });
 
-            if (typeof GM_webRequest !== 'undefined') {
-                const mappedRules = dynamicRules.map(r => {
-                    let selector = r.condition?.urlFilter || '*';
-                    if (selector.startsWith('||')) {
-                        selector = '*' + selector.slice(2);
-                    }
-                    return {
-                        selector: selector,
-                        action: r.action?.type === 'block' ? 'cancel' : 'allow'
-                    };
-                });
-                GM_webRequest(mappedRules, () => {});
-            }
-            return Promise.resolve();
-        },
-        getDynamicRules: () => Promise.resolve([...dynamicRules])
+        const mappedRules = _dynamicRules.map(r => ({
+            selector: r.condition?.urlFilter || "*",
+            action: r.action?.type === "block" ? "cancel" : "ok"
+        }));
+
+        if (typeof GM_webRequest === "function") {
+            try { GM_webRequest(mappedRules, () => {}); } catch(e) { _warn("DNR/GM_webRequest error:", e); }
+        }
+        return Promise.resolve();
+      },
+      getDynamicRules: () => Promise.resolve([..._dynamicRules])
     },
     sidePanel: {
         setOptions: () => Promise.resolve(),
-        setPanelBehavior: () => Promise.resolve(),
-        open: () => { console.warn("[to-userscript] sidePanel.open is not supported in userscript context."); return Promise.resolve(); }
+        open: () => { _warn("sidePanel.open is not supported in userscripts."); return Promise.resolve(); }
+    },
+    tabs: {
+      create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
+      query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
+      sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
     },
     cookies: {
       get: (d) => _cookieList(d).then(c => c[0] || null),
@@ -172,6 +160,10 @@ function buildPolyfill({ isBackground = false } = {}) {
         return Promise.resolve(id);
       }
     },
+    action: {
+        setBadgeText: (d) => { _log("Badge set:", d.text); return Promise.resolve(); },
+        setIcon: (d) => { _log("Icon set:", d); return Promise.resolve(); }
+    },
     permissions: {
       contains: () => Promise.resolve(true),
       request: () => Promise.resolve(true)
@@ -179,12 +171,6 @@ function buildPolyfill({ isBackground = false } = {}) {
     contextMenus: {
       create: (props) => { _registerMenuCommand(props.title, props.onclick); return props.id || 1; },
       removeAll: () => {}
-    },
-    action: {
-        setBadgeText: (d) => { console.log("[to-userscript] Badge set:", d.text); return Promise.resolve(); },
-        setBadgeBackgroundColor: () => Promise.resolve(),
-        setIcon: () => Promise.resolve(),
-        setTitle: () => Promise.resolve()
     }
   };
 

@@ -9,8 +9,7 @@ const LOCALE_KEYS = {{LOCALE}};
 const USED_LOCALE = {{USED_LOCALE}};
 const CURRENT_LOCATION = window.location.href;
 
-// Scoped asset map to avoid cross-script collisions
-window.EXTENSION_ASSETS_MAPS = window.EXTENSION_ASSETS_MAPS || {};
+// Scoped asset map to prevent cross-script collisions
 window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] = {{EXTENSION_ASSETS_MAP}};
 
 function _base64ToBlob(base64, mimeType = "application/octet-stream") {
@@ -23,36 +22,18 @@ function _base64ToBlob(base64, mimeType = "application/octet-stream") {
 
 function _createAssetUrl(path = "") {
   if (path.startsWith("/")) path = path.slice(1);
-  const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"];
-  const assetData = assetsMap[path];
+  const assets = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
+  const assetData = assets[path];
   if (typeof assetData === "undefined") return path;
 
-  const extMatch = path.match(/\.[a-z0-9]+$/i);
-  const ext = extMatch ? extMatch[0].toLowerCase() : "";
+  const ext = "." + (path.split(".").pop() || "").toLowerCase();
 
-  const mimeMap = {
-      ".html": "text/html",
-      ".htm": "text/html",
-      ".js": "text/javascript",
-      ".css": "text/css",
-      ".json": "application/json",
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".gif": "image/gif",
-      ".svg": "image/svg+xml",
-      ".webp": "image/webp",
-      ".ico": "image/x-icon",
-      ".woff": "font/woff",
-      ".woff2": "font/woff2",
-      ".ttf": "font/ttf"
-  };
+  // Use a minimal mime map here or inject one if needed.
+  // For orchestration, we prioritize text-detection for object URLs.
+  const isText = ["html", "htm", "js", "css", "json", "svg"].some(t => path.endsWith(t));
 
-  const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
-  const mime = mimeMap[ext] || "application/octet-stream";
-
-  if (isText) return URL.createObjectURL(new Blob([assetData], { type: mime }));
-  return URL.createObjectURL(_base64ToBlob(assetData, mime));
+  if (isText) return URL.createObjectURL(new Blob([assetData], { type: "text/plain" }));
+  return URL.createObjectURL(_base64ToBlob(assetData));
 }
 
 {{COMBINED_EXECUTION_LOGIC}}
@@ -66,8 +47,10 @@ async function main() {
   let matched = false;
 
   for (const config of CONTENT_SCRIPT_CONFIGS_FOR_MATCHING) {
-    // Direct match pattern verification without dangerous substring fallback
-    if (config.matches && config.matches.some(p => convertMatchPatternToRegExp(p).test(currentUrl))) {
+    if (config.matches && config.matches.some(p => {
+        // High-fidelity regex matching without dangerous includes fallback
+        return convertMatchPatternToRegExp(p).test(currentUrl);
+    })) {
       matched = true;
       break;
     }

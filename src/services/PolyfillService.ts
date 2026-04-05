@@ -26,27 +26,27 @@ function _base64ToUint8Array(base64) {
 }
 `;
 
-    // High-fidelity getURL implementation utilizing centralized MIME mapping
+    // High-fidelity MIME map serialization
+    const mimeMapJson = JSON.stringify(AssetService.MIME_MAP);
+
     const getURLImpl = `
       getURL: (path) => {
         if (!path) return "";
         let cleanPath = path.startsWith("/") ? path.substring(1) : path;
-        const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"];
-        const data = assetsMap[cleanPath];
+        const assets = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
+        const data = assets[cleanPath];
         if (typeof data === "undefined") return path;
 
-        const extMatch = cleanPath.match(/\\.[a-z0-9]+$/i);
-        const ext = extMatch ? extMatch[0].toLowerCase() : "";
-        const mimeMap = ${JSON.stringify(AssetService.MIME_MAP)};
-        const mime = mimeMap[ext] || "application/octet-stream";
+        const mimeMap = ${mimeMapJson};
+        const ext = "." + (cleanPath.split(".").pop() || "").toLowerCase();
+        const mimeType = mimeMap[ext] || "application/octet-stream";
 
-        const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
-        const blob = isText ? new Blob([data], { type: mime }) : new Blob([_base64ToUint8Array(data)], { type: mime });
+        const isText = ["html", "htm", "js", "css", "json", "svg"].some(t => cleanPath.endsWith(t));
+        const blob = isText ? new Blob([data], { type: mimeType }) : new Blob([_base64ToUint8Array(data)], { type: mimeType });
         return URL.createObjectURL(blob);
       }
     `;
 
-    // Ensure all placeholders are replaced, especially INJECTED_MANIFEST and EXTENSION_ASSETS_MAP
     let combined = `
 ${decodingHelper}
 ${messaging}
@@ -54,9 +54,9 @@ ${abstraction}
 
 ${polyfillTemplate
   .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
-  .replace('{{SCRIPT_ID}}', internalId)
-  .replace('{{EXTENSION_ASSETS_MAP}}', JSON.stringify(assetMap))
+  .replace(/{{SCRIPT_ID}}/g, internalId)
   .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
+  .replace('{{EXTENSION_ASSETS_MAP}}', JSON.stringify(assetMap))
   .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest))}
 `;
 

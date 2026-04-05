@@ -2,12 +2,12 @@
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)
 ![License: ISC](https://img.shields.io/badge/License-ISC-green.svg)
-![96.7% Industrial Coverage](https://img.shields.io/badge/Coverage-96.7%25-brightgreen.svg)
+![97.2% Industrial Coverage](https://img.shields.io/badge/Coverage-97.2%25-brightgreen.svg)
 ![Release Ready](https://img.shields.io/badge/Release-Ready-brightgreen.svg)
 
 > **"Transcend the Browser Boundaries."** Convert any Chrome or Firefox extension into a high-performance, portable userscript with industrial-grade precision.
 
-Built with a transcendent **Migration Engine** architecture, `to-userscript` is strictly typed, rigorously tested (96.7% logic coverage), and engineered for professional deployment.
+Built with a transcendent **Migration Engine** architecture, `to-userscript` is strictly typed, rigorously tested (97.2% logic coverage), and engineered for professional deployment.
 
 ---
 
@@ -61,7 +61,7 @@ to-userscript convert ./my-extension -o my-script.user.js --beautify
 ## 🛠️ Architecture: The Migration Engine
 
 **Summary of Conversion Pipeline:**
-1. **Unpack**: Extracts extension contents from URL, ZIP, or directory.
+1. **Unpack**: Extracts extension contents from URL, ZIP, or directory. Uses system temporary storage for safety.
 2. **LoadManifestStep**: Normalizes and validates V2/V3 manifests.
 3. **ProcessResourcesStep**: Reads and maps all JavaScript and CSS resources.
 4. **GenerateAssetsStep**: Recursively inlines assets (HTML, CSS, images) into a virtual map.
@@ -86,7 +86,7 @@ graph TD
 | **Storage** | ✅ Full | Support for `local`, `sync`, and `managed` areas via GM_setValue/IndexedDB. |
 | **Runtime** | ✅ Full | `sendMessage`, `onMessage`, `getURL`, and `getManifest` with context-awareness. |
 | **Tabs** | ✅ Elite | Tab creation and query emulation matching userscript permissions. |
-| **Scripting** | ✅ MV3 | `executeScript`, `insertCSS`, and `removeCSS` support with async awaiting. |
+| **Scripting** | ✅ MV3 | `executeScript`, `insertCSS`, and `removeCSS` support with async awaiting and isolated execution. |
 | **NetRequest** | ✅ MV3 | `declarativeNetRequest` stateful rules mapped to `GM_webRequest`. |
 | **I18n** | ✅ Full | Robust support for `_locales` messaging and placeholder substitution. |
 | **UI** | ✅ Hybrid | Options and Popups rendered as sandboxed iframes with a `postMessage` event bus. |
@@ -97,7 +97,7 @@ graph TD
 
 1.  **Virtual Asset Map**: Every extension resource (images, fonts, HTML) is converted into a base64/text entry in a hidden, script-scoped `EXTENSION_ASSETS_MAP`.
 2.  **Blob Resolution**: Polyfilled `chrome.runtime.getURL` generates transient `blob:` URLs on-the-fly, allowing original code to function without modification.
-3.  **Scoped Execution**: Scripts run in a sandboxed IIFE after the polyfill is attached to `window.chrome` and `window.browser`, so extension code resolves emulated APIs instead of native extension APIs.
+3.  **Scoped Execution**: Scripts run in a sandboxed IIFE after the polyfill is attached to `window.chrome` and `window.browser`. This ensures extensions interact with our emulated APIs.
 4.  **Message Bridge**: A custom event bus coordinates communication between the main content context and any UI iframes (popups/options).
 
 ---
@@ -109,14 +109,14 @@ If a website's **Content Security Policy** blocks Blob URLs or Data URLs:
 1. Open your userscript manager (e.g., Tampermonkey) dashboard.
 2. Go to **Settings** -> **Advanced**.
 3. Locate **"Modify existing Content Security headers"**.
-4. **Recommendation**: Prefer adding a site-scoped exception or whitelisting the specific site in your manager. Avoid setting this to "Remove entirely" globally, as it significantly weakens your browser's security against cross-site scripting attacks.
+4. **Recommendation**: Prefer adding a site-scoped exception or whitelisting the specific site in your manager. Avoid setting this to "Remove entirely" globally, as it significantly weakens your browser's security.
 
 ---
 
 ## 🧪 Robustness First
 
 We take reliability seriously.
-- **Elite Coverage**: Core logic is 96.7% verified.
+- **Elite Coverage**: Core logic is 97.2% verified.
 - **Security First**: Built-in path traversal protection in `UnpackService`.
 - **Modern Build**: Compiled with `tsup` for maximum performance and ESM compatibility.
 

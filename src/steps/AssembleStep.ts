@@ -21,9 +21,9 @@ export class AssembleStep extends Step {
     const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    // Industrial-grade locale ingestion with sanitization
+    // Industrial-grade locale ingestion
     const requestedLocale = locale || (manifest.raw as any).default_locale || 'en';
-    const usedLocale = /^[A-Za-z0-9_-]+$/.test(requestedLocale) ? requestedLocale : 'en';
+    const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
     const runAtMap: Record<string, string[]> = {
@@ -76,10 +76,13 @@ async function executeAllScripts(globalThis, extensionCssData) {
 
     // --- Document Idle
     ${runAtMap['document-idle'].join('\n\n')}
+
+    _log('Phased execution complete.');
 }
 `;
 
     const finalScript = TemplateService.replace(orchestrationTemplate, {
+      '{{SCRIPT_ID}}': ManifestService.getInternalId(manifest),
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
       '{{COMBINED_EXECUTION_LOGIC}}': combinedExecutionLogic,
@@ -105,13 +108,16 @@ async function executeAllScripts(globalThis, extensionCssData) {
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
+    // --- Scoped Assets
+    window.EXTENSION_ASSETS_MAPS = window.EXTENSION_ASSETS_MAPS || {};
+
     // --- Polyfill & Logic
     ${mainPolyfill}
 
     // --- Logic
     ${finalScript}
 
-    main().catch(e => console.error(\`[\${SCRIPT_NAME}] Initialization error\`, e));
+    main().catch(e => _error('Initialization error', e));
 })();
 `;
 
