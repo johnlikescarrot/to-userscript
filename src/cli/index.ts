@@ -52,7 +52,7 @@ const parser = yargs(hideBin(process.argv))
         console.log(chalk.green.bold('\n✨ Conversion successful!'));
       } catch (error) {
         console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
-        throw error; // Rethrow to ensure non-zero exit and properly handled by parseAsync
+        throw error; // Rethrow to allow parseAsync to handle it and ensure cleanup finally runs
       } finally {
         if (tempDownloadPath) {
           await fs.remove(tempDownloadPath).catch(() => {});
@@ -73,7 +73,7 @@ const parser = yargs(hideBin(process.argv))
         console.log(chalk.green('Downloaded to:'), dest);
       } catch (error) {
         console.error(chalk.red.bold('\n❌ Download failed:'), (error as Error).message);
-        process.exit(1);
+        throw error;
       }
     }
   )
@@ -91,17 +91,21 @@ const parser = yargs(hideBin(process.argv))
         console.log('// ==/UserScript==');
       } catch (error) {
         console.error(chalk.red.bold('\n❌ Error:'), (error as Error).message);
-        process.exit(1);
+        throw error;
       }
     }
   )
   .help().alias('h', 'help');
 
-// Execute CLI
-(async () => {
-  try {
-    await parser.parseAsync();
-  } catch (err) {
-    process.exit(1);
-  }
-})();
+async function run() {
+    try {
+        await parser.parseAsync();
+    } catch (err) {
+        process.exit(1);
+    }
+}
+
+// Only run if called directly
+if (import.meta.url === pathToFileURL(process.argv[1]).href || process.argv[1].endsWith('to-userscript')) {
+    run();
+}

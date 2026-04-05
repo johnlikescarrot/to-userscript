@@ -4,7 +4,7 @@ import { PolyfillService } from '../services/PolyfillService.js';
 import { TemplateService } from '../services/TemplateService.js';
 import { ManifestService } from '../services/ManifestService.js';
 import { AssetService } from '../services/AssetService.js';
-import { AssetMap, ResourceResult } from '../core/types.js';
+import { AssetMap, ResourceResult, ScriptContents } from '../core/types.js';
 import { NormalizedManifest } from '../schemas/ManifestSchema.js';
 import fs from 'fs-extra';
 import { normalizePath } from '../utils/PathUtils.js';
@@ -26,69 +26,64 @@ export class AssembleStep extends Step {
     const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
-    const runAtMap: Record<string, string[]> = {
-      'document-start': [], 'document-end': [], 'document-idle': []
-    };
+    const scriptId = ManifestService.getInternalId(manifest);
 
-    if (manifest.content_scripts) {
-      for (const cs of manifest.content_scripts) {
-        const runAt = (cs.run_at?.replace('_', '-') || 'document-idle');
-        if (cs.js) {
-          for (const js of cs.js) {
-            const normalized = normalizePath(js);
-            if (resources.jsContents[normalized]) {
-              runAtMap[runAt].push(`// --- ${normalized}\n${resources.jsContents[normalized]}`);
-            }
-          }
-        }
-      }
-    }
-
+    // Build per-config execution logic to support matches/exclude_matches fidelity
     const combinedExecutionLogic = `
-async function executeAllScripts(globalThis, extensionCssData) {
+async function executeConfigScripts(config, globalThis, cssMap) {
     const {chrome, browser, window, self} = globalThis;
 
-    // Inject CSS
-    for (const [path, css] of Object.entries(extensionCssData)) {
-        try {
-            const style = document.createElement('style');
-            style.textContent = css;
-            style.setAttribute('data-extension-path', path);
-            (document.head || document.documentElement).appendChild(style);
-        } catch(e) {}
+    // Inject CSS for this specific config
+    if (config.css) {
+        for (const cssPath of config.css) {
+            const css = cssMap[cssPath];
+            if (css) {
+                try {
+                    const style = document.createElement('style');
+                    style.textContent = css;
+                    style.setAttribute('data-extension-path', cssPath);
+                    (document.head || document.documentElement).appendChild(style);
+                } catch(e) {}
+            }
+        }
     }
 
-    // --- Document Start
-    ${runAtMap['document-start'].join('\n\n')}
+    const runAt = (config.run_at || 'document_idle').replace('_', '-');
 
-    if (document.readyState === 'loading') {
-        await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+    if (runAt === 'document-end') {
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+        }
+    } else if (runAt === 'document-idle') {
+        if (typeof window.requestIdleCallback === 'function') {
+            await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
+        } else {
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
     }
 
-    // --- Document End
-    ${runAtMap['document-end'].join('\n\n')}
-
-    if (typeof window.requestIdleCallback === 'function') {
-        await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
-    } else {
-        await new Promise(resolve => setTimeout(resolve, 50));
+    // Execute JS for this specific config
+    const jsResources = ${JSON.stringify(resources.jsContents)};
+    if (config.js) {
+        for (const jsPath of config.js) {
+            const code = jsResources[jsPath];
+            if (code) {
+                try {
+                    // Isolation via Function constructor
+                    new Function('chrome', 'browser', 'window', 'self', code)(chrome, browser, window, self);
+                } catch(e) { _error("Execution error in " + jsPath, e); }
+            }
+        }
     }
-
-    // --- Document Idle
-    ${runAtMap['document-idle'].join('\n\n')}
-
-    _log('Phased execution complete.');
 }
 `;
-
-    const scriptId = ManifestService.getInternalId(manifest);
 
     const finalPayload = TemplateService.replace(orchestrationTemplate, {
       '{{SCRIPT_ID}}': scriptId,
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
       '{{COMBINED_EXECUTION_LOGIC}}': combinedExecutionLogic,
-      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(manifest.content_scripts),
+      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(manifest.content_scripts || []),
       '{{OPTIONS_PAGE_PATH}}': JSON.stringify(manifest.options_page || null),
       '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action.default_popup || null),
       '{{EXTENSION_ICON}}': 'null',
@@ -100,7 +95,6 @@ async function executeAllScripts(globalThis, extensionCssData) {
 
     let header = '';
     if (target === 'userscript') {
-        // Metadata sanitization to prevent injection
         const sanitize = (s: any) => (s || '').toString().replace(/[\r\n]/g, ' ').trim();
 
         const metadata = [
@@ -118,16 +112,15 @@ async function executeAllScripts(globalThis, extensionCssData) {
             '// @grant       Notification'
         ];
 
-        const combinedCode = mainPolyfill + finalPayload;
-        if (combinedCode.includes('GM_webRequest')) {
-            metadata.push('// @grant       GM_webRequest');
-        }
-        if (combinedCode.includes('GM_cookie')) {
-            metadata.push('// @grant       GM_cookie');
-        }
+        // Advanced Grant detection
+        if (mainPolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
+        if (mainPolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
 
         const matches = new Set<string>();
-        manifest.content_scripts.forEach(cs => cs.matches?.forEach(m => matches.add(m)));
+        (manifest.content_scripts || []).forEach(cs => {
+            cs.matches?.forEach(m => matches.add(sanitize(m)));
+        });
+
         if (matches.size > 0) {
             matches.forEach(m => metadata.push(`// @match       ${m}`));
         } else {
@@ -151,9 +144,6 @@ ${header}
     const escapeRegex = ${RegexUtils.escapeRegex.toString()};
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
-
-    // --- Scoped Assets
-    window.EXTENSION_ASSETS_MAPS = window.EXTENSION_ASSETS_MAPS || {};
 
     // --- Polyfill & Logic
     ${mainPolyfill}

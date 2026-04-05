@@ -18,7 +18,7 @@ Most converters are fragile scripts. `to-userscript` is a **robust transformatio
 - **🛡️ Strictly Typed**: Powered by TypeScript and Zod for absolute manifest integrity.
 - **⚙️ Atomic Pipeline**: Step-based conversion lifecycle (Unpack → Parse → Process → Inline → Assemble).
 - **📦 Zero External Dependencies**: Generates completely self-contained `.user.js` files with embedded assets.
-- **🔌 Advanced MV3 Polyfill**: High-fidelity emulation of `chrome.*` APIs including Scripting, DNR, and SidePanel.
+- **🔌 Advanced MV3 Polyfill**: High-fidelity emulation of `chrome.scripting` and `chrome.declarativeNetRequest`, plus `chrome.sidePanel` (stubbed/partial).
 - **🎨 Recursive Inlining**: Automatically converts images, fonts, and CSS into embedded Data/Blob URLs.
 
 ---
@@ -66,6 +66,8 @@ to-userscript convert ./my-extension -o my-script.user.js --beautify
 3. **ProcessResourcesStep**: Maps all internal JavaScript and CSS resources defined in the manifest.
 4. **GenerateAssetsStep**: Recursively inlines HTML, CSS, images, and fonts into a virtual, script-scoped asset map.
 5. **AssembleStep**: Dynamically detects required `@grant` permissions, injects the Unified Polyfill Layer, and produces the self-contained `.user.js` file.
+
+**Accessible Summary**: The pipeline takes an extension source, extracts it, parses the manifest to understand the structure, processes all scripts and assets (including recursive inlining of CSS/HTML), and assembles everything into a final userscript with a full polyfill layer.
 
 <!-- Pipeline diagram: Extension Source -> UnpackService -> LoadManifestStep -> ProcessResourcesStep -> GenerateAssetsStep -> AssembleStep -> Final .user.js -->
 ```mermaid
