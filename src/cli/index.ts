@@ -106,6 +106,7 @@ async function run() {
 }
 
 // Only run if called directly
-if (import.meta.url === pathToFileURL(process.argv[1]).href || process.argv[1].endsWith('to-userscript')) {
+const mainFile = process.argv[1];
+if (mainFile && (import.meta.url === pathToFileURL(mainFile).href || mainFile.endsWith('to-userscript'))) {
     run();
 }
