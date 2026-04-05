@@ -2,6 +2,9 @@ function buildPolyfill({ isBackground = false } = {}) {
   const BUS = createEventBus("{{SCRIPT_ID}}");
   const RUNTIME = createRuntime(isBackground ? "background" : "tab", BUS);
 
+  // Global assets map injected during assembly
+  window.EXTENSION_ASSETS_MAP = window.EXTENSION_ASSETS_MAP || {{EXTENSION_ASSETS_MAP}};
+
   const storageChangeListeners = new Set();
   function broadcastStorageChange(changes, areaName) {
     const changeRecords = {};
@@ -66,12 +69,11 @@ function buildPolyfill({ isBackground = false } = {}) {
                   return [{ result: res, frameId: 0 }];
               }
               if (files) {
-                  // Industrial-grade files support: execute contents from assets map
                   let lastRes = undefined;
                   for (const file of files) {
-                      const content = EXTENSION_ASSETS_MAP[file.startsWith("/") ? file.slice(1) : file];
+                      const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+                      const content = window.EXTENSION_ASSETS_MAP[cleanPath];
                       if (content) {
-                          // Note: This executes in current scope. For real isolation, we'd need a worker or iframe.
                           lastRes = eval(content);
                       } else {
                           console.error(`[to-userscript] Script file not found in assets: ${file}`);
@@ -93,7 +95,8 @@ function buildPolyfill({ isBackground = false } = {}) {
           }
           if (files) {
               for (const file of files) {
-                  const content = EXTENSION_ASSETS_MAP[file.startsWith("/") ? file.slice(1) : file];
+                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+                  const content = window.EXTENSION_ASSETS_MAP[cleanPath];
                   if (content) {
                       const style = document.createElement('style');
                       style.textContent = content;
@@ -110,8 +113,8 @@ function buildPolyfill({ isBackground = false } = {}) {
           }
           if (files) {
               for (const file of files) {
-                  const s = document.querySelector(`style[data-scripting-file="${file}"]`);
-                  if (s) s.remove();
+                  const styles = document.querySelectorAll('style[data-scripting-file]');
+                  for (const s of styles) if (s.getAttribute('data-scripting-file') === file) s.remove();
               }
           }
       }
@@ -181,6 +184,7 @@ function buildPolyfill({ isBackground = false } = {}) {
     }
   };
 
+  // Full backward compatibility aliases for Manifest V2
   polyfill.browserAction = polyfill.action;
   polyfill.pageAction = polyfill.action;
   return polyfill;

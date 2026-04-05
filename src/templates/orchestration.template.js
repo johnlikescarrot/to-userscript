@@ -9,6 +9,9 @@ const LOCALE_KEYS = {{LOCALE}};
 const USED_LOCALE = {{USED_LOCALE}};
 const CURRENT_LOCATION = window.location.href;
 
+// Ensure global assets map is available in orchestration too
+window.EXTENSION_ASSETS_MAP = window.EXTENSION_ASSETS_MAP || {{EXTENSION_ASSETS_MAP}};
+
 function _base64ToBlob(base64, mimeType = "application/octet-stream") {
   const binary = atob(base64);
   const len = binary.length;
@@ -19,12 +22,12 @@ function _base64ToBlob(base64, mimeType = "application/octet-stream") {
 
 function _createAssetUrl(path = "") {
   if (path.startsWith("/")) path = path.slice(1);
-  const assetData = EXTENSION_ASSETS_MAP[path];
+  const assetData = window.EXTENSION_ASSETS_MAP[path];
   if (typeof assetData === "undefined") return path;
 
   const ext = (path.split(".").pop() || "").toLowerCase();
   const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
-  const mime = "application/octet-stream"; // Simplified helper
+  const mime = "application/octet-stream";
 
   if (isText) return URL.createObjectURL(new Blob([assetData], { type: "text/plain" }));
   return URL.createObjectURL(_base64ToBlob(assetData, mime));
@@ -41,7 +44,13 @@ async function main() {
   let matched = false;
 
   for (const config of CONTENT_SCRIPT_CONFIGS_FOR_MATCHING) {
-    if (config.matches && config.matches.some(p => currentUrl.includes(p))) { // Simplified matching
+    if (config.matches && config.matches.some(p => {
+        try {
+            return convertMatchPatternToRegExp(p).test(currentUrl);
+        } catch(e) {
+            return currentUrl.includes(p);
+        }
+    })) {
       matched = true;
       break;
     }

@@ -67,7 +67,8 @@ const parser = yargs(hideBin(process.argv))
     (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
     async (argv) => {
       const source = argv.source as string;
-      const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
+      const isUrl = source.startsWith('http');
+      const url = isUrl ? source : DownloadService.getCrxUrl(source);
       const dest = path.resolve(process.cwd(), 'extension.zip');
       await DownloadService.download(url, dest);
       console.log(chalk.green('Downloaded to:'), dest);
@@ -98,7 +99,6 @@ export async function bootstrap() {
   } catch (error) {
     console.error(chalk.red.bold('\n❌ Fatal error:'), (error as Error).message);
     process.exit(1);
-    throw error;
   }
 }
 

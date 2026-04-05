@@ -21,8 +21,9 @@ export class AssembleStep extends Step {
     const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    // Industrial-grade locale ingestion
-    const usedLocale = locale || (manifest.raw as any).default_locale || 'en';
+    // Industrial-grade locale ingestion with sanitization
+    const requestedLocale = locale || (manifest.raw as any).default_locale || 'en';
+    const usedLocale = /^[A-Za-z0-9_-]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
     const runAtMap: Record<string, string[]> = {
@@ -87,7 +88,8 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action.default_popup || null),
       '{{EXTENSION_ICON}}': 'null',
       '{{LOCALE}}': JSON.stringify(localeMessages),
-      '{{USED_LOCALE}}': JSON.stringify(usedLocale)
+      '{{USED_LOCALE}}': JSON.stringify(usedLocale),
+      '{{EXTENSION_ASSETS_MAP}}': JSON.stringify(assetMap)
     });
 
     const wrapper = `

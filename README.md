@@ -60,6 +60,13 @@ to-userscript convert ./my-extension -o my-script.user.js --beautify
 
 ## 🛠️ Architecture: The Migration Engine
 
+**Summary of Conversion Pipeline:**
+1. **Unpack**: Extracts extension contents from URL, ZIP, or directory.
+2. **LoadManifestStep**: Normalizes and validates V2/V3 manifests.
+3. **ProcessResourcesStep**: Reads and maps all JavaScript and CSS resources.
+4. **GenerateAssetsStep**: Recursively inlines assets (HTML, CSS, images) into a virtual map.
+5. **AssembleStep**: Performs polyfill injection and produces the final .user.js.
+
 ```mermaid
 graph TD
     A[Extension Source] -->|URL/ZIP/Dir| B(UnpackService)
