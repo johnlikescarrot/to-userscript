@@ -9,8 +9,9 @@ const LOCALE_KEYS = {{LOCALE}};
 const USED_LOCALE = {{USED_LOCALE}};
 const CURRENT_LOCATION = window.location.href;
 
-// Ensure global assets map is available in orchestration too
-window.EXTENSION_ASSETS_MAP = window.EXTENSION_ASSETS_MAP || {{EXTENSION_ASSETS_MAP}};
+// Scoped asset map to avoid cross-script collisions
+window.EXTENSION_ASSETS_MAPS = window.EXTENSION_ASSETS_MAPS || {};
+window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] = {{EXTENSION_ASSETS_MAP}};
 
 function _base64ToBlob(base64, mimeType = "application/octet-stream") {
   const binary = atob(base64);
@@ -22,30 +23,32 @@ function _base64ToBlob(base64, mimeType = "application/octet-stream") {
 
 function _createAssetUrl(path = "") {
   if (path.startsWith("/")) path = path.slice(1);
-  const assetData = window.EXTENSION_ASSETS_MAP[path];
+  const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"];
+  const assetData = assetsMap[path];
   if (typeof assetData === "undefined") return path;
 
-  const ext = (path.split(".").pop() || "").toLowerCase();
+  const extMatch = path.match(/\.[a-z0-9]+$/i);
+  const ext = extMatch ? extMatch[0].toLowerCase() : "";
 
   const mimeMap = {
-      "html": "text/html",
-      "htm": "text/html",
-      "js": "text/javascript",
-      "css": "text/css",
-      "json": "application/json",
-      "png": "image/png",
-      "jpg": "image/jpeg",
-      "jpeg": "image/jpeg",
-      "gif": "image/gif",
-      "svg": "image/svg+xml",
-      "webp": "image/webp",
-      "ico": "image/x-icon",
-      "woff": "font/woff",
-      "woff2": "font/woff2",
-      "ttf": "font/ttf"
+      ".html": "text/html",
+      ".htm": "text/html",
+      ".js": "text/javascript",
+      ".css": "text/css",
+      ".json": "application/json",
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".svg": "image/svg+xml",
+      ".webp": "image/webp",
+      ".ico": "image/x-icon",
+      ".woff": "font/woff",
+      ".woff2": "font/woff2",
+      ".ttf": "font/ttf"
   };
 
-  const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
+  const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
   const mime = mimeMap[ext] || "application/octet-stream";
 
   if (isText) return URL.createObjectURL(new Blob([assetData], { type: mime }));
@@ -63,7 +66,7 @@ async function main() {
   let matched = false;
 
   for (const config of CONTENT_SCRIPT_CONFIGS_FOR_MATCHING) {
-    // Robust matching logic using RegexUtils.
+    // Direct match pattern verification without dangerous substring fallback
     if (config.matches && config.matches.some(p => convertMatchPatternToRegExp(p).test(currentUrl))) {
       matched = true;
       break;

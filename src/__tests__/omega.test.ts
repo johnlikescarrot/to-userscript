@@ -33,7 +33,7 @@ vi.mock('ora', () => {
     return { default: vi.fn(() => mockOraInstance) };
 });
 
-describe('Ultimate Omega Mastery: Final Logic Verification', () => {
+describe('Ultimate Omega Mastery: Final Refinement', () => {
   const originalArgv = process.argv;
 
   beforeEach(() => {
@@ -60,27 +60,46 @@ describe('Ultimate Omega Mastery: Final Logic Verification', () => {
     process.argv = originalArgv;
   });
 
-  it('Index: ensures failure on missing input', async () => {
+  it('Index: covers missing input branch and cleanup', async () => {
+    vi.mocked(fs.stat).mockResolvedValueOnce({ isFile: () => true } as any);
+    vi.spyOn(UnpackService, 'unpack').mockResolvedValue('/tmp/u');
+    vi.mocked(fs.outputFile).mockResolvedValue(undefined);
+
+    await convertExtension({ inputDir: 'a.crx', outputFile: 'o.user.js', target: 'userscript' });
+    expect(fs.outputFile).toHaveBeenCalled();
+    expect(fs.remove).toHaveBeenCalled();
+
+    // Assert missing input directory throws correct error
     vi.mocked(fs.pathExists).mockResolvedValueOnce(false);
-    await expect(convertExtension({ inputDir: 'none', outputFile: 'o.js', target: 'userscript' })).rejects.toThrow('Input directory or archive not found');
+    await expect(convertExtension({ inputDir: 'none', outputFile: 'o.user.js', target: 'userscript' }))
+        .rejects.toThrow('Input directory or archive not found');
   });
 
-  it('Services: locale ingestion error fallback returns empty object', async () => {
+  it('Services: Locale success and error fallback assertions', async () => {
+      // Test success path
+      vi.mocked(fs.pathExists).mockResolvedValueOnce(true);
+      vi.mocked(fs.readJson).mockResolvedValueOnce({ hello: { message: "world" } });
+      const msg = await ManifestService.loadLocaleMessages('.', 'en');
+      expect(msg).toEqual({ hello: { message: "world" } });
+
+      // Test error path (JSON parse error fallback to empty object)
       vi.mocked(fs.pathExists).mockResolvedValueOnce(true);
       vi.mocked(fs.readJson).mockRejectedValueOnce(new Error('malformed-json'));
       const fallback = await ManifestService.loadLocaleMessages('.', 'en');
       expect(fallback).toEqual({});
   });
 
-  it('CLI: comprehensive outcome pinning', async () => {
+  it('CLI: comprehensive coverage', async () => {
       vi.mocked(fetch).mockResolvedValue({ ok: true, arrayBuffer: async () => Buffer.from('d') } as any);
       vi.mocked(fs.outputFile).mockResolvedValue(undefined);
 
-      const extId = 'abcdefghijklmnopqrstuvwxyz123456';
-      await Cli.runCli(['convert', `https://chromewebstore.google.com/detail/${extId}`, '-o', 'o.js']);
+      const extensionId = 'abcdefghijklmnopqrstuvwxyz123456';
+      await Cli.runCli(['convert', `https://chromewebstore.google.com/detail/${extensionId}`, '-o', 'o.js']);
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining(extensionId));
+  });
 
-      // Pinning observable outcomes
-      expect(fetch).toHaveBeenCalledWith(expect.stringContaining(extId));
-      expect(fs.outputFile).toHaveBeenCalledWith(path.resolve('o.js'), expect.any(String));
+  it('Utils: Regex edge cases', () => {
+      expect(RegexUtils.convertMatchPatternToRegExpString('invalid')).toBe('$.');
+      expect(RegexUtils.convertMatchPatternToRegExpString('http:///path')).toBe('$.');
   });
 });

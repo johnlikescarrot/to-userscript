@@ -2,22 +2,9 @@ import { TemplateService } from './TemplateService.js';
 import { AssetMap } from '../core/types.js';
 import { Manifest } from '../schemas/ManifestSchema.js';
 import { ManifestService } from './ManifestService.js';
+import { AssetService } from './AssetService.js';
 
 export class PolyfillService {
-  private static MIME_MAP: Record<string, string> = {
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "svg": "image/svg+xml",
-    "json": "application/json",
-    "webp": "image/webp",
-    "ico": "image/x-icon",
-    "woff": "font/woff",
-    "woff2": "font/woff2",
-    "ttf": "font/ttf"
-  };
-
   static async build(
     target: 'userscript' | 'vanilla' | 'postmessage',
     assetMap: AssetMap,
@@ -39,19 +26,21 @@ function _base64ToUint8Array(base64) {
 }
 `;
 
+    // High-fidelity getURL implementation utilizing centralized MIME mapping
     const getURLImpl = `
       getURL: (path) => {
         if (!path) return "";
         let cleanPath = path.startsWith("/") ? path.substring(1) : path;
-        const data = window.EXTENSION_ASSETS_MAP[cleanPath];
-        if (!data) return path;
+        const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"];
+        const data = assetsMap[cleanPath];
+        if (typeof data === "undefined") return path;
 
-        const ext = (cleanPath.split(".").pop() || "").toLowerCase();
-        const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
+        const extMatch = cleanPath.match(/\\.[a-z0-9]+$/i);
+        const ext = extMatch ? extMatch[0].toLowerCase() : "";
+        const mimeMap = ${JSON.stringify(AssetService.MIME_MAP)};
+        const mime = mimeMap[ext] || "application/octet-stream";
 
-        const mimeMap = ${JSON.stringify(this.MIME_MAP)};
-        const mime = isText ? "text/plain" : (mimeMap[ext] || "application/octet-stream");
-
+        const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
         const blob = isText ? new Blob([data], { type: mime }) : new Blob([_base64ToUint8Array(data)], { type: mime });
         return URL.createObjectURL(blob);
       }

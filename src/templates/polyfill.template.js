@@ -2,8 +2,8 @@ function buildPolyfill({ isBackground = false } = {}) {
   const BUS = createEventBus("{{SCRIPT_ID}}");
   const RUNTIME = createRuntime(isBackground ? "background" : "tab", BUS);
 
-  // Global assets map injected during assembly
-  window.EXTENSION_ASSETS_MAP = window.EXTENSION_ASSETS_MAP || {{EXTENSION_ASSETS_MAP}};
+  // Scoped assets resolution
+  const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"];
 
   const storageChangeListeners = new Set();
   function broadcastStorageChange(changes, areaName) {
@@ -62,20 +62,22 @@ function buildPolyfill({ isBackground = false } = {}) {
     },
     scripting: {
       executeScript: async (details = {}) => {
-          const { func, files, args } = details;
+          const { target, func, files, args } = details;
           try {
               if (func) {
-                  // Execute and await for standard async contract compliance
-                  const res = await func(...(args || []));
+                  // Truly isolated execution using Function constructor to break polyfill closure
+                  const wrapper = new Function('args', `return (${func.toString()})(...args)`);
+                  const res = await wrapper(args || []);
                   return [{ result: res, frameId: 0 }];
               }
               if (files) {
                   let lastRes = undefined;
                   for (const file of files) {
                       const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                      const content = window.EXTENSION_ASSETS_MAP[cleanPath];
+                      const content = assetsMap[cleanPath];
                       if (content) {
-                          lastRes = eval(content);
+                          // Execute file scripts in global isolated scope
+                          lastRes = new Function(content)();
                       } else {
                           console.error(`[to-userscript] Script file not found in assets: ${file}`);
                       }
@@ -97,7 +99,7 @@ function buildPolyfill({ isBackground = false } = {}) {
           if (files) {
               for (const file of files) {
                   const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                  const content = window.EXTENSION_ASSETS_MAP[cleanPath];
+                  const content = assetsMap[cleanPath];
                   if (content) {
                       const style = document.createElement('style');
                       style.textContent = content;
@@ -114,7 +116,7 @@ function buildPolyfill({ isBackground = false } = {}) {
           }
           if (files) {
               for (const file of files) {
-                  // Precise removal using attribute-equals selector
+                  // Direct attribute-equals selection for O(1) removal
                   const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(file)}"]`);
                   for (const s of styles) s.remove();
               }

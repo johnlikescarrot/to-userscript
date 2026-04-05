@@ -95,7 +95,7 @@ graph TD
 
 ## 🔬 How it Works
 
-1.  **Virtual Asset Map**: Every extension resource (images, fonts, HTML) is converted into a base64/text entry in a hidden `EXTENSION_ASSETS_MAP`.
+1.  **Virtual Asset Map**: Every extension resource (images, fonts, HTML) is converted into a base64/text entry in a hidden, script-scoped `EXTENSION_ASSETS_MAP`.
 2.  **Blob Resolution**: Polyfilled `chrome.runtime.getURL` generates transient `blob:` URLs on-the-fly, allowing original code to function without modification.
 3.  **Scoped Execution**: Scripts run in a sandboxed IIFE after the polyfill is attached to `window.chrome` and `window.browser`, so extension code resolves emulated APIs instead of native extension APIs.
 4.  **Message Bridge**: A custom event bus coordinates communication between the main content context and any UI iframes (popups/options).
@@ -108,7 +108,8 @@ If a website's **Content Security Policy** blocks Blob URLs or Data URLs:
 
 1. Open your userscript manager (e.g., Tampermonkey) dashboard.
 2. Go to **Settings** -> **Advanced**.
-3. Set **"Modify existing Content Security headers"** to **"Remove entirely"**.
+3. Locate **"Modify existing Content Security headers"**.
+4. **Recommendation**: Prefer adding a site-scoped exception or whitelisting the specific site in your manager. Avoid setting this to "Remove entirely" globally, as it significantly weakens your browser's security against cross-site scripting attacks.
 
 ---
 
