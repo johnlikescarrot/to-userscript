@@ -3,6 +3,7 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import path from 'path';
+import os from 'os';
 import { pathToFileURL, fileURLToPath } from 'url';
 import fs from 'fs-extra';
 import chalk from 'chalk';
@@ -32,15 +33,15 @@ const parser = yargs(hideBin(process.argv))
       let source = argv.source as string;
       let tempDownloadPath: string | null = null;
 
-      if (source.startsWith('http')) {
-        console.log(chalk.blue('Downloading extension...'));
-        const isCws = source.includes('chromewebstore');
-        const url = isCws ? DownloadService.getCrxUrl(source) : source;
-        tempDownloadPath = path.resolve(process.cwd(), `temp-download-${Date.now()}.zip`);
-        source = await DownloadService.download(url, tempDownloadPath);
-      }
-
       try {
+        if (source.startsWith('http')) {
+          console.log(chalk.blue('Downloading extension...'));
+          const isCws = source.includes('chromewebstore');
+          const url = isCws ? DownloadService.getCrxUrl(source) : source;
+          tempDownloadPath = path.resolve(os.tmpdir(), `to-userscript-download-${Date.now()}.zip`);
+          source = await DownloadService.download(url, tempDownloadPath);
+        }
+
         await convertExtension({
           inputDir: path.resolve(source),
           outputFile: path.resolve(argv.output as string || 'extension.user.js'),
@@ -66,8 +67,7 @@ const parser = yargs(hideBin(process.argv))
     (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
     async (argv) => {
       const source = argv.source as string;
-      const isUrl = source.startsWith('http');
-      const url = isUrl ? source : DownloadService.getCrxUrl(source);
+      const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
       const dest = path.resolve(process.cwd(), 'extension.zip');
       await DownloadService.download(url, dest);
       console.log(chalk.green('Downloaded to:'), dest);
@@ -98,7 +98,7 @@ export async function bootstrap() {
   } catch (error) {
     console.error(chalk.red.bold('\n❌ Fatal error:'), (error as Error).message);
     process.exit(1);
-    throw error; // Essential for tests that mock process.exit to not actually exit
+    throw error;
   }
 }
 

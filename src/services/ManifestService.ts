@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import path from 'path';
 import { ManifestSchema, Manifest, NormalizedManifest } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
 
@@ -29,7 +30,6 @@ export class ManifestService {
 
     if (parsed.manifest_version === 2) {
       normalized.action = {
-        // P1: Consistently map MV2 popup sources
         default_popup: parsed.browser_action?.default_popup || parsed.page_action?.default_popup,
         default_icon: parsed.browser_action?.default_icon,
       };
@@ -48,6 +48,19 @@ export class ManifestService {
     }
 
     return normalized;
+  }
+
+  static async loadLocaleMessages(extensionRoot: string, locale: string): Promise<Record<string, any>> {
+    const localePath = path.join(extensionRoot, '_locales', locale, 'messages.json');
+    if (await fs.pathExists(localePath)) {
+      try {
+        return await fs.readJson(localePath);
+      } catch (e) {
+        // Fallback for malformed JSON
+        return {};
+      }
+    }
+    return {};
   }
 
   static getInternalId(manifest: { name: string }): string {

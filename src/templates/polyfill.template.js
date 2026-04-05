@@ -13,6 +13,9 @@ function buildPolyfill({ isBackground = false } = {}) {
     });
   }
 
+  // Stateful DNR Rule Management
+  let dynamicRules = [];
+
   const polyfill = {
     runtime: {
       ...RUNTIME,
@@ -20,7 +23,7 @@ function buildPolyfill({ isBackground = false } = {}) {
       getURL: (path) => _createAssetUrl(path),
       openOptionsPage: () => {
         if (OPTIONS_PAGE_PATH) _openTab(_createAssetUrl(OPTIONS_PAGE_PATH), true);
-        else _warn("No options page defined.");
+        else console.warn("[to-userscript] No options page defined.");
       },
       id: "{{SCRIPT_ID}}"
     },
@@ -55,36 +58,96 @@ function buildPolyfill({ isBackground = false } = {}) {
       sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
     },
     scripting: {
-      executeScript: ({ target, func, files, args }) => {
-          if (func) {
-              const res = func(...(args || []));
-              return Promise.resolve([{ result: res, frameId: 0 }]);
+      executeScript: async (details = {}) => {
+          const { func, files, args } = details;
+          try {
+              if (func) {
+                  const res = await func(...(args || []));
+                  return [{ result: res, frameId: 0 }];
+              }
+              if (files) {
+                  // Industrial-grade files support: execute contents from assets map
+                  let lastRes = undefined;
+                  for (const file of files) {
+                      const content = EXTENSION_ASSETS_MAP[file.startsWith("/") ? file.slice(1) : file];
+                      if (content) {
+                          // Note: This executes in current scope. For real isolation, we'd need a worker or iframe.
+                          lastRes = eval(content);
+                      } else {
+                          console.error(`[to-userscript] Script file not found in assets: ${file}`);
+                      }
+                  }
+                  return [{ result: lastRes, frameId: 0 }];
+              }
+              return [];
+          } catch (err) {
+              throw err;
+          }
+      },
+      insertCSS: async ({ css, files } = {}) => {
+          if (css) {
+              const style = document.createElement('style');
+              style.textContent = css;
+              style.setAttribute('data-scripting-css', '');
+              (document.head || document.documentElement).appendChild(style);
           }
           if (files) {
-              _warn("scripting.executeScript with files is not supported in userscript context.");
+              for (const file of files) {
+                  const content = EXTENSION_ASSETS_MAP[file.startsWith("/") ? file.slice(1) : file];
+                  if (content) {
+                      const style = document.createElement('style');
+                      style.textContent = content;
+                      style.setAttribute('data-scripting-file', file);
+                      (document.head || document.documentElement).appendChild(style);
+                  }
+              }
           }
-          return Promise.resolve([]);
       },
-      insertCSS: () => Promise.resolve(),
-      removeCSS: () => Promise.resolve()
+      removeCSS: async ({ css, files } = {}) => {
+          if (css) {
+              const styles = document.querySelectorAll('style[data-scripting-css]');
+              for (const s of styles) if (s.textContent === css) s.remove();
+          }
+          if (files) {
+              for (const file of files) {
+                  const s = document.querySelector(`style[data-scripting-file="${file}"]`);
+                  if (s) s.remove();
+              }
+          }
+      }
     },
     declarativeNetRequest: {
-        updateDynamicRules: ({ addRules, removeRuleIds }) => {
+        updateDynamicRules: ({ addRules, removeRuleIds } = {}) => {
+            if (removeRuleIds && removeRuleIds.length > 0) {
+                dynamicRules = dynamicRules.filter(r => !removeRuleIds.includes(r.id));
+            }
+            if (addRules && addRules.length > 0) {
+                const newIds = addRules.map(r => r.id);
+                dynamicRules = dynamicRules.filter(r => !newIds.includes(r.id));
+                dynamicRules = [...dynamicRules, ...addRules];
+            }
+
             if (typeof GM_webRequest !== 'undefined') {
-                const mappedRules = (addRules || []).map(r => ({
-                    selector: r.condition?.urlFilter || '*',
-                    action: r.action?.type === 'block' ? 'cancel' : 'allow'
-                }));
+                const mappedRules = dynamicRules.map(r => {
+                    let selector = r.condition?.urlFilter || '*';
+                    if (selector.startsWith('||')) {
+                        selector = '*' + selector.slice(2);
+                    }
+                    return {
+                        selector: selector,
+                        action: r.action?.type === 'block' ? 'cancel' : 'allow'
+                    };
+                });
                 GM_webRequest(mappedRules, () => {});
             }
             return Promise.resolve();
         },
-        getDynamicRules: () => Promise.resolve([])
+        getDynamicRules: () => Promise.resolve([...dynamicRules])
     },
     sidePanel: {
         setOptions: () => Promise.resolve(),
         setPanelBehavior: () => Promise.resolve(),
-        open: () => { _warn("sidePanel.open is not supported in userscript context."); return Promise.resolve(); }
+        open: () => { console.warn("[to-userscript] sidePanel.open is not supported in userscript context."); return Promise.resolve(); }
     },
     cookies: {
       get: (d) => _cookieList(d).then(c => c[0] || null),
@@ -111,7 +174,7 @@ function buildPolyfill({ isBackground = false } = {}) {
       removeAll: () => {}
     },
     action: {
-        setBadgeText: (d) => { _log("Badge set:", d.text); return Promise.resolve(); },
+        setBadgeText: (d) => { console.log("[to-userscript] Badge set:", d.text); return Promise.resolve(); },
         setBadgeBackgroundColor: () => Promise.resolve(),
         setIcon: () => Promise.resolve(),
         setTitle: () => Promise.resolve()
@@ -119,5 +182,6 @@ function buildPolyfill({ isBackground = false } = {}) {
   };
 
   polyfill.browserAction = polyfill.action;
+  polyfill.pageAction = polyfill.action;
   return polyfill;
 }

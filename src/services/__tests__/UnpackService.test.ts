@@ -1,54 +1,77 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnpackService } from '../UnpackService.js';
 import yauzl from 'yauzl';
-import { EventEmitter } from 'events';
 import fs from 'fs-extra';
+import { EventEmitter } from 'events';
+import { PassThrough } from 'stream';
 
 vi.mock('yauzl');
-vi.mock('fs-extra', () => ({
-    default: {
-        mkdirpSync: vi.fn(),
-        createWriteStream: vi.fn(() => {
-            const s = new EventEmitter() as any;
-            s.write = vi.fn();
-            s.end = vi.fn();
-            return s;
-        })
-    }
-}));
+vi.mock('fs-extra');
 vi.mock('tmp', () => ({
-    default: { dirSync: () => ({ name: '/tmp/dir' }) },
-    dirSync: () => ({ name: '/tmp/dir' })
+    default: { dirSync: () => ({ name: '/tmp/test' }) },
+    dirSync: () => ({ name: '/tmp/test' })
 }));
 
 describe('UnpackService', () => {
-  it('should cover extraction loop and errors', async () => {
-      const mockZip = new EventEmitter() as any;
-      mockZip.readEntry = vi.fn();
-      mockZip.openReadStream = vi.fn((entry, cb) => {
-          const s = new EventEmitter() as any;
-          s.pipe = vi.fn((dest) => {
-              process.nextTick(() => dest.emit('close'));
-              return dest;
-          });
-          cb(null, s);
-          process.nextTick(() => {
-              s.emit('close');
-              mockZip.readEntry();
-          });
-      });
-      vi.mocked(yauzl.open).mockImplementation((p, o, cb: any) => cb(null, mockZip));
-
-      const p = UnpackService.unpack('t.zip');
-      mockZip.emit('entry', { fileName: 'file.txt' });
-      mockZip.emit('entry', { fileName: 'dir/' });
-      process.nextTick(() => mockZip.emit('close'));
-      await p;
-      expect(mockZip.readEntry).toHaveBeenCalled();
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('should handle errors', async () => {
-      vi.mocked(yauzl.open).mockImplementation((p, o, cb: any) => cb(new Error('fail')));
-      await expect(UnpackService.unpack('t.zip')).rejects.toThrow('fail');
+  it('should reject potential path traversal attacks', async () => {
+      const mockZip = new EventEmitter();
+      (mockZip as any).readEntry = vi.fn();
+      vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => {
+          cb(null, mockZip);
+      });
+
+      const unpackPromise = UnpackService.unpack('attack.zip');
+      // Emit malicious entry
+      mockZip.emit('entry', { fileName: '../../etc/passwd' });
+
+      await expect(unpackPromise).rejects.toThrow('Potential path traversal attack detected');
+      // readEntry is called once during initialization
+      expect(mockZip.readEntry).toHaveBeenCalledTimes(1);
+  });
+
+  it('should advance ZIP loop driven by writeStream close events', async () => {
+      const mockZip = new EventEmitter();
+      const readEntrySpy = vi.fn();
+      (mockZip as any).readEntry = readEntrySpy;
+
+      vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => {
+          cb(null, mockZip);
+      });
+
+      const mockReadStream = new PassThrough();
+      const mockWriteStream = new EventEmitter();
+      (mockWriteStream as any).write = vi.fn().mockReturnValue(true);
+      (mockWriteStream as any).end = vi.fn();
+
+      vi.mocked(fs.createWriteStream).mockReturnValue(mockWriteStream as any);
+      (mockZip as any).openReadStream = vi.fn((entry, cb) => cb(null, mockReadStream));
+
+      const unpackPromise = UnpackService.unpack('valid.zip');
+
+      // Zip initializes with 1 readEntry call
+      expect(readEntrySpy).toHaveBeenCalledTimes(1);
+
+      // 1. Process directory entry
+      mockZip.emit('entry', { fileName: 'dir/' });
+      expect(fs.mkdirpSync).toHaveBeenCalledWith(expect.stringContaining('dir'));
+      // Advancing from dir entry: calls readEntry
+      expect(readEntrySpy).toHaveBeenCalledTimes(2);
+
+      // 2. Process file entry
+      mockZip.emit('entry', { fileName: 'file.txt' });
+      expect(fs.createWriteStream).toHaveBeenCalled();
+
+      // Advance by simulating stream completion
+      mockWriteStream.emit('close');
+      expect(readEntrySpy).toHaveBeenCalledTimes(3);
+
+      // 3. Close zip
+      mockZip.emit('close');
+      const result = await unpackPromise;
+      expect(result).toBe('/tmp/test');
   });
 });

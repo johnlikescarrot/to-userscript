@@ -1,13 +1,13 @@
 # 🚀 to-userscript: The Ultimate WebExtension Converter
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
-[![License: ISC](https://img.shields.io/badge/License-ISC-green.svg)](https://opensource.org/licenses/ISC)
-[![100% Industrial](https://img.shields.io/badge/Coverage-Industrial--Grade-brightgreen.svg)]()
-[![Release Ready](https://img.shields.io/badge/Release-Ready-brightgreen.svg)]()
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)
+![License: ISC](https://img.shields.io/badge/License-ISC-green.svg)
+![96.7% Industrial Coverage](https://img.shields.io/badge/Coverage-96.7%25-brightgreen.svg)
+![Release Ready](https://img.shields.io/badge/Release-Ready-brightgreen.svg)
 
 > **"Transcend the Browser Boundaries."** Convert any Chrome or Firefox extension into a high-performance, portable userscript with industrial-grade precision.
 
-Built with a transcendent **Migration Engine** architecture, `to-userscript` is strictly typed, rigorously tested (97%+ logic coverage), and engineered for professional deployment.
+Built with a transcendent **Migration Engine** architecture, `to-userscript` is strictly typed, rigorously tested (96.7% logic coverage), and engineered for professional deployment.
 
 ---
 
@@ -38,11 +38,13 @@ npm install -g to-userscript
 ### Usage
 
 **Convert from Chrome Web Store:**
+
 ```bash
 to-userscript convert "https://chromewebstore.google.com/detail/..." -o my-script.user.js --minify
 ```
 
 **Convert a local directory:**
+
 ```bash
 to-userscript convert ./my-extension -o my-script.user.js --beautify
 ```
@@ -77,9 +79,9 @@ graph TD
 | **Storage** | ✅ Full | Support for `local`, `sync`, and `managed` areas via GM_setValue/IndexedDB. |
 | **Runtime** | ✅ Full | `sendMessage`, `onMessage`, `getURL`, and `getManifest` with context-awareness. |
 | **Tabs** | ✅ Elite | Tab creation and query emulation matching userscript permissions. |
-| **Scripting** | ✅ MV3 | `executeScript` and `insertCSS` support via dynamic injection. |
-| **NetRequest** | ✅ MV3 | `declarativeNetRequest` rules mapped to `GM_webRequest`. |
-| **I18n** | ✅ Full | Full localized messaging support from `_locales` directories. |
+| **Scripting** | ✅ MV3 | `executeScript`, `insertCSS`, and `removeCSS` support with async awaiting. |
+| **NetRequest** | ✅ MV3 | `declarativeNetRequest` stateful rules mapped to `GM_webRequest`. |
+| **I18n** | ✅ Full | Robust support for `_locales` messaging and placeholder substitution. |
 | **UI** | ✅ Hybrid | Options and Popups rendered as sandboxed iframes with a `postMessage` event bus. |
 
 ---
@@ -88,7 +90,7 @@ graph TD
 
 1.  **Virtual Asset Map**: Every extension resource (images, fonts, HTML) is converted into a base64/text entry in a hidden `EXTENSION_ASSETS_MAP`.
 2.  **Blob Resolution**: Polyfilled `chrome.runtime.getURL` generates transient `blob:` URLs on-the-fly, allowing original code to function without modification.
-3.  **Scoped Execution**: Scripts are executed within a sandboxed IIFE using a `with(polyfill)` block to ensure they interact with our emulated `chrome` object rather than the host page.
+3.  **Scoped Execution**: Scripts run in a sandboxed IIFE after the polyfill is attached to `window.chrome` and `window.browser`, so extension code resolves emulated APIs instead of native extension APIs.
 4.  **Message Bridge**: A custom event bus coordinates communication between the main content context and any UI iframes (popups/options).
 
 ---
@@ -106,7 +108,7 @@ If a website's **Content Security Policy** blocks Blob URLs or Data URLs:
 ## 🧪 Robustness First
 
 We take reliability seriously.
-- **Elite Coverage**: Core logic is 100% verified.
+- **Elite Coverage**: Core logic is 96.7% verified.
 - **Security First**: Built-in path traversal protection in `UnpackService`.
 - **Modern Build**: Compiled with `tsup` for maximum performance and ESM compatibility.
 
@@ -115,6 +117,7 @@ We take reliability seriously.
 ## 🤝 Contributing
 
 We welcome transcendent contributions!
+
 1. `bun install`
 2. `npm test` to verify the suite.
 3. Open a PR with your feature or fix.

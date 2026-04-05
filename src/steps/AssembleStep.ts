@@ -2,6 +2,7 @@ import { Step } from '../core/Step.js';
 import { ConversionContext } from '../core/ConversionContext.js';
 import { PolyfillService } from '../services/PolyfillService.js';
 import { TemplateService } from '../services/TemplateService.js';
+import { ManifestService } from '../services/ManifestService.js';
 import { AssetMap, ResourceResult } from '../core/types.js';
 import { NormalizedManifest } from '../schemas/ManifestSchema.js';
 import fs from 'fs-extra';
@@ -15,10 +16,14 @@ export class AssembleStep extends Step {
     const manifest = context.get<NormalizedManifest>('manifest');
     const assetMap = context.get<AssetMap>('assetMap');
     const resources = context.get<ResourceResult>('resources');
-    const { target, outputFile } = context.config;
+    const { target, outputFile, inputDir, locale } = context.config;
 
     const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
     const orchestrationTemplate = await TemplateService.load('orchestration');
+
+    // Industrial-grade locale ingestion
+    const usedLocale = locale || (manifest.raw as any).default_locale || 'en';
+    const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
     const runAtMap: Record<string, string[]> = {
       'document-start': [], 'document-end': [], 'document-idle': []
@@ -70,8 +75,6 @@ async function executeAllScripts(globalThis, extensionCssData) {
 
     // --- Document Idle
     ${runAtMap['document-idle'].join('\n\n')}
-
-    _log('Phased execution complete.');
 }
 `;
 
@@ -83,8 +86,8 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{OPTIONS_PAGE_PATH}}': JSON.stringify(manifest.options_page || null),
       '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action.default_popup || null),
       '{{EXTENSION_ICON}}': 'null',
-      '{{LOCALE}}': '{}',
-      '{{USED_LOCALE}}': JSON.stringify(context.config.locale || 'en')
+      '{{LOCALE}}': JSON.stringify(localeMessages),
+      '{{USED_LOCALE}}': JSON.stringify(usedLocale)
     });
 
     const wrapper = `
@@ -106,7 +109,7 @@ async function executeAllScripts(globalThis, extensionCssData) {
     // --- Logic
     ${finalScript}
 
-    main().catch(e => _error('Initialization error', e));
+    main().catch(e => console.error(\`[\${SCRIPT_NAME}] Initialization error\`, e));
 })();
 `;
 
