@@ -4,7 +4,6 @@ function buildPolyfill({ isBackground = false } = {}) {
 
   const storageChangeListeners = new Set();
   function broadcastStorageChange(changes, areaName) {
-    // P2: Build proper change records { newValue }
     const changeRecords = {};
     for (const [key, newValue] of Object.entries(changes)) {
         changeRecords[key] = { newValue };
@@ -14,7 +13,7 @@ function buildPolyfill({ isBackground = false } = {}) {
     });
   }
 
-  return {
+  const polyfill = {
     runtime: {
       ...RUNTIME,
       getManifest: () => JSON.parse(JSON.stringify(INJECTED_MANIFEST)),
@@ -55,6 +54,38 @@ function buildPolyfill({ isBackground = false } = {}) {
       query: () => Promise.resolve([{ id: 1, url: CURRENT_LOCATION, active: true }]),
       sendMessage: (id, msg) => RUNTIME.sendMessage(msg)
     },
+    scripting: {
+      executeScript: ({ target, func, files, args }) => {
+          if (func) {
+              const res = func(...(args || []));
+              return Promise.resolve([{ result: res, frameId: 0 }]);
+          }
+          if (files) {
+              _warn("scripting.executeScript with files is not supported in userscript context.");
+          }
+          return Promise.resolve([]);
+      },
+      insertCSS: () => Promise.resolve(),
+      removeCSS: () => Promise.resolve()
+    },
+    declarativeNetRequest: {
+        updateDynamicRules: ({ addRules, removeRuleIds }) => {
+            if (typeof GM_webRequest !== 'undefined') {
+                const mappedRules = (addRules || []).map(r => ({
+                    selector: r.condition?.urlFilter || '*',
+                    action: r.action?.type === 'block' ? 'cancel' : 'allow'
+                }));
+                GM_webRequest(mappedRules, () => {});
+            }
+            return Promise.resolve();
+        },
+        getDynamicRules: () => Promise.resolve([])
+    },
+    sidePanel: {
+        setOptions: () => Promise.resolve(),
+        setPanelBehavior: () => Promise.resolve(),
+        open: () => { _warn("sidePanel.open is not supported in userscript context."); return Promise.resolve(); }
+    },
     cookies: {
       get: (d) => _cookieList(d).then(c => c[0] || null),
       getAll: (d) => _cookieList(d),
@@ -78,6 +109,15 @@ function buildPolyfill({ isBackground = false } = {}) {
     contextMenus: {
       create: (props) => { _registerMenuCommand(props.title, props.onclick); return props.id || 1; },
       removeAll: () => {}
+    },
+    action: {
+        setBadgeText: (d) => { _log("Badge set:", d.text); return Promise.resolve(); },
+        setBadgeBackgroundColor: () => Promise.resolve(),
+        setIcon: () => Promise.resolve(),
+        setTitle: () => Promise.resolve()
     }
   };
+
+  polyfill.browserAction = polyfill.action;
+  return polyfill;
 }
