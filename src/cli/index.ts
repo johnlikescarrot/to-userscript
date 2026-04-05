@@ -52,7 +52,7 @@ const parser = yargs(hideBin(process.argv))
         console.log(chalk.green.bold('\n✨ Conversion successful!'));
       } catch (error) {
         console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
-        throw error; // Rethrow to allow parseAsync to handle it and ensure cleanup finally runs
+        throw error;
       } finally {
         if (tempDownloadPath) {
           await fs.remove(tempDownloadPath).catch(() => {});
@@ -84,6 +84,9 @@ const parser = yargs(hideBin(process.argv))
     async (argv) => {
       try {
         const filePath = path.resolve(argv.userscript as string);
+        if (!(await fs.pathExists(filePath))) {
+            throw new Error(`File not found: ${filePath}`);
+        }
         const fileUrl = pathToFileURL(filePath).href;
         console.log('// ==UserScript==');
         console.log('// @name        Requirement');

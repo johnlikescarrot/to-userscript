@@ -26,7 +26,10 @@ export class AssembleStep extends Step {
     const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
-    const scriptId = ManifestService.getInternalId(manifest);
+    let scriptId = ManifestService.getInternalId(manifest);
+    if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
+        scriptId = (manifest.name || 'ext').replace(/[^a-z0-9]/gi, '-').toLowerCase() || 'extension-' + Date.now();
+    }
 
     const combinedExecutionLogic = `
 async function executeConfigScripts(config, globalThis, cssMap) {
@@ -41,7 +44,7 @@ async function executeConfigScripts(config, globalThis, cssMap) {
                     style.textContent = css;
                     style.setAttribute('data-extension-path', cssPath);
                     (document.head || document.documentElement).appendChild(style);
-                } catch(e) {}
+                } catch(e) { _error("CSS injection failed for " + cssPath, e); }
             }
         }
     }
@@ -75,7 +78,7 @@ async function executeConfigScripts(config, globalThis, cssMap) {
 }
 `;
 
-    const finalPayload = TemplateService.replace(orchestrationTemplate, {
+    const replacements = {
       '{{SCRIPT_ID}}': scriptId,
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
@@ -88,7 +91,9 @@ async function executeConfigScripts(config, globalThis, cssMap) {
       '{{USED_LOCALE}}': JSON.stringify(usedLocale),
       '{{EXTENSION_ASSETS_MAP}}': JSON.stringify(assetMap),
       '{{MIME_MAP}}': JSON.stringify(AssetService.MIME_MAP)
-    });
+    };
+
+    const finalPayload = TemplateService.replace(orchestrationTemplate, replacements);
 
     let header = '';
     if (target === 'userscript') {
@@ -152,6 +157,7 @@ ${header}
 })();
 `;
 
-    await fs.outputFile(outputFile, wrapper);
+    // Final global replacement to catch placeholders injected in polyfill template
+    await fs.outputFile(outputFile, TemplateService.replace(wrapper, replacements));
   }
 }

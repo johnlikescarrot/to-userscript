@@ -34,7 +34,7 @@ describe('Industrial Transformation: Elite Verification Suite', () => {
               content_scripts: [{ matches: ['*://test.com/*'], js: ['c.js'] }]
             });
         }
-        return '{{SCRIPT_ID}} {{EXTENSION_ASSETS_MAP}} {{LOCALE}} {{INJECTED_MANIFEST}} {{MIME_MAP}}';
+        return '{{SCRIPT_ID}} {{EXTENSION_ASSETS_MAP}} {{LOCALE}} {{INJECTED_MANIFEST}} {{MIME_MAP}} window.EXTENSION_ASSETS_MAPS';
     });
     vi.mocked(fs.outputFile).mockResolvedValue(undefined);
     vi.mocked(fs.remove).mockResolvedValue(undefined);

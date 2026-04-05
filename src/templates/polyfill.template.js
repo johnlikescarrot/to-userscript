@@ -167,7 +167,9 @@ function buildPolyfill({ isBackground = false } = {}) {
         setBadgeText: (d) => { _log("Badge set:", d.text); return Promise.resolve(); },
         setBadgeBackgroundColor: (d) => { _log("Badge color set:", d.color); return Promise.resolve(); },
         setTitle: (d) => { _log("Title set:", d.title); return Promise.resolve(); },
-        setIcon: (d) => { _log("Icon set:", d); return Promise.resolve(); }
+        setIcon: (d) => { _log("Icon set:", d); return Promise.resolve(); },
+        enable: () => Promise.resolve(),
+        disable: () => Promise.resolve()
     },
     permissions: {
       contains: () => Promise.resolve(true),
