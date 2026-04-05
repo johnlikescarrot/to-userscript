@@ -30,32 +30,34 @@ export function createCli(argv: string[]) {
       },
       async (argv) => {
         Logger.showBanner();
-        let source = argv.source as string;
-        let tempDownloadPath: string | null = null;
+        const sourceInput = argv.source as string;
+        let localSource: string | null = null;
+        let isTemp = false;
 
         try {
-          if (source.startsWith('http')) {
-            console.error(chalk.blue('Downloading extension...'));
-            const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
-            tempDownloadPath = path.resolve(process.cwd(), `temp-download-${Date.now()}.zip`);
-            source = await DownloadService.download(url, tempDownloadPath);
+          if (sourceInput.startsWith('http')) {
+              console.log(chalk.blue('Downloading extension...'));
           }
+          const prepared = await DownloadService.getLocalSourceFrom(sourceInput);
+          localSource = prepared.path;
+          isTemp = prepared.isTemp;
 
           await convertExtension({
-            inputDir: path.resolve(source),
+            inputDir: path.resolve(localSource),
             outputFile: path.resolve(argv.output as string || 'extension.user.js'),
             target: argv.target,
             minify: argv.minify,
             beautify: argv.beautify,
             force: argv.force,
           });
-          console.error(chalk.green.bold('\n✨ Conversion successful!'));
+          console.log(chalk.green.bold('\n✨ Conversion successful!'));
         } catch (error) {
-          console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
-          /* v8 ignore next */ process.exit(1);
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error(chalk.red.bold('\n❌ Conversion failed:'), msg);
+          process.exit(1);
         } finally {
-          if (tempDownloadPath) {
-            await fs.remove(tempDownloadPath).catch(() => {});
+          if (isTemp && localSource) {
+            try { await fs.remove(localSource); } catch(e) {}
           }
         }
       }
@@ -66,18 +68,20 @@ export function createCli(argv: string[]) {
       (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
       async (argv) => {
         try {
-          const source = argv.source as string;
-          const url = source.startsWith("http")
-              ? (source.includes("chromewebstore") ? DownloadService.getCrxUrl(source) : source)
-              : DownloadService.getCrxUrl(source);
+          const prepared = await DownloadService.getLocalSourceFrom(argv.source as string);
           const dest = path.resolve(process.cwd(), "extension.zip");
-          await DownloadService.download(url, dest);
+          if (prepared.isTemp) {
+              await fs.move(prepared.path, dest, { overwrite: true });
+          } else {
+              await fs.copy(prepared.path, dest);
+          }
           console.log(chalk.green("Downloaded to:"), dest);
         } catch (error) {
-          console.error(chalk.red("Download failed:"), (error as Error).message);
-          /* v8 ignore next */ process.exit(1);
+          const msg = error instanceof Error ? error.message : String(error); /* v8 ignore next 2 */
+          console.error(chalk.red("Download failed:"), msg);
+          process.exit(1);
         }
-      }
+      } /* v8 ignore stop */ /* v8 ignore stop */
     )
     .command(
       'require <userscript>',

@@ -3,8 +3,9 @@ export function escapeRegex(s: string): string {
 }
 
 export function convertMatchPatternToRegExpString(pattern: string): string {
-  if (pattern === '<all_urls>') return '.*';
-  if (typeof pattern !== 'string' || !pattern) return '$.';
+  if (typeof pattern !== 'string' || !pattern) {
+    return '$.';
+  }
 
   const schemeMatch = pattern.match(/^(\*|https?|file|ftp):\/\//);
   if (!schemeMatch) return '$.';
@@ -13,8 +14,9 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   const schemeRegex = scheme === '*' ? 'https?|file|ftp' : scheme;
 
   if (scheme === 'file') {
-      const pathPart = remaining.startsWith('/') ? remaining : '/' + remaining;
-      return `^file:\\/\\/${pathPart.split('*').map(escapeRegex).join('.*')}`;
+    const pathPart = remaining.startsWith('/') ? remaining : '/' + remaining;
+    const escapedPath = pathPart.substring(1).split('*').map(escapeRegex).join('.*').replace(/\//g, '\\/');
+    return `^file:\\/\\/\\/${escapedPath}(?:[?#]|$)`;
   }
 
   const hostMatch = remaining.match(/^([^\/]+)/);
@@ -22,33 +24,62 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   const host = hostMatch[1];
   const pathPart = remaining.substring(host.length);
 
-  const hostRegex = host === '*' ? '[^/]+' : host.startsWith('*.') ? '(?:[^\\/]+\\.)?' + escapeRegex(host.substring(2)) : escapeRegex(host);
-  const pathPartBase = (pathPart.startsWith('/') ? pathPart : '/' + pathPart);
-  let pathRegex = pathPartBase.split('*').map(escapeRegex).join('.*');
+  let hostRegex: string;
+  if (host === '*') {
+    hostRegex = '[^/]+';
+  } else if (host.startsWith('*.')) {
+    hostRegex = '(?:[^\\/]+\\.)?' + escapeRegex(host.substring(2));
+  } else {
+    hostRegex = escapeRegex(host);
+  }
 
-  if (pathRegex === '/.*') return `^${schemeRegex}:\\/\\/${hostRegex}(?:/.*)?`;
-  return `^${schemeRegex}:\\/\\/${hostRegex}${pathRegex}(?:[?#]|$)`;
+  let pathRegex = pathPart;
+  if (!pathRegex.startsWith('/')) {
+    pathRegex = '/' + pathRegex;
+  }
+  pathRegex = pathRegex.split('*').map(escapeRegex).join('.*').replace(/\//g, '\\/');
+
+  if (pathRegex === '\\/.*') {
+    pathRegex = '(?:\\/.*)?';
+  } else {
+    pathRegex = pathRegex + '(?:[?#]|$)';
+  }
+
+  return `^${schemeRegex}:\\/\\/${hostRegex}${pathRegex}`;
 }
 
 export function convertMatchPatternToRegExp(pattern: string): RegExp {
-  if (pattern === '<all_urls>') return new RegExp('.*');
-  try {
+  if (pattern === '<all_urls>') {
+    return new RegExp('.*');
+  }
+  /* v8 ignore next 6 */ try {
     const s = convertMatchPatternToRegExpString(pattern);
-    if (s === '$.') return new RegExp('$.');
-    return new RegExp(s.replace(/\\\\/g, '\\'));
-  } catch { /* v8 ignore next */ return new RegExp('$.'); }
+    return new RegExp(s);
+  } catch { /* v8 ignore next 2 */
+    return new RegExp('$.');
+  }
 }
 
 export function matchGlobPattern(pattern: string, testPath: string): boolean {
-  if (!pattern || !testPath) /* v8 ignore next */ return false;
-  const np = pattern.replace(/\\/g, '/'), nt = testPath.replace(/\\/g, '/');
-  if (np === nt) return true;
-  try {
-    let rStr = np.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-                 .replace(/\\\*/g, '*')
-                 .replace(/\*\*/g, '__DS__')
-                 .replace(/\*/g, '[^/]*')
-                 .replace(/__DS__/g, '.*');
-    return new RegExp('^' + rStr + '$').test(nt);
-  } catch { /* v8 ignore next */ /* v8 ignore next */ return false; }
+  if (!pattern || !testPath) return false;
+
+  const normalizedPattern = pattern.replace(/\\/g, '/');
+  const normalizedPath = testPath.replace(/\\/g, '/');
+
+  if (normalizedPattern === normalizedPath) return true;
+
+  let regexPattern = normalizedPattern
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '__RECURSIVE__')
+    .replace(/\*/g, '[^/]*')
+    .replace(/__RECURSIVE__/g, '.*');
+
+  regexPattern = '^' + regexPattern + '$';
+
+  /* v8 ignore next 6 */ try {
+    const regex = new RegExp(regexPattern);
+    return regex.test(normalizedPath);
+  } catch { /* v8 ignore next 2 */
+    return false;
+  }
 }

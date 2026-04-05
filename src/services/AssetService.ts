@@ -91,7 +91,7 @@ export class AssetService {
       const v3 = manifest as ManifestV3;
       if (v3.options_ui?.page) initialFiles.add(v3.options_ui.page);
       if (v3.action?.default_popup) initialFiles.add(v3.action.default_popup);
-      if ((v3 as any).side_panel?.default_path) initialFiles.add((v3 as any).side_panel.default_path);
+      if (v3.side_panel?.default_path) initialFiles.add((v3 as any).side_panel.default_path);
     }
 
     await Promise.all(Array.from(initialFiles).map(f => processFile(f)));

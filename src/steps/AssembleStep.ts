@@ -21,7 +21,9 @@ export class AssembleStep extends Step {
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
     const phases: Record<string, string[]> = {
-      'document-start': [], 'document-end': [], 'document-idle': []
+        'document-start': [],
+        'document-end': [],
+        'document-idle': []
     };
 
     const scripts = manifest.content_scripts || [];
@@ -48,48 +50,54 @@ export class AssembleStep extends Step {
 
     const sidePanelPath = (manifest.raw as any).side_panel?.default_path || null;
     const hasUI = manifest.action?.default_popup || manifest.options_page || sidePanelPath;
-    if (hasUI || matches.size === 0) matches.add('*://*/*');
+    if (hasUI || matches.size === 0) {
+        matches.add('*://*/*');
+    }
 
     const combinedExecutionLogic = `
 async function executeAllScripts(scope, extensionCssData) {
     const {chrome, browser, window, self, document} = scope;
-    for (const [path, css] of Object.entries(extensionCssData)) {
-        try {
+
+    const injectStyle = (css, path) => {
+        if (typeof GM_addElement === 'function') {
+            GM_addElement('style', { textContent: css, 'data-extension-path': path });
+        } else {
             const style = document.createElement('style');
             style.textContent = css;
             style.setAttribute('data-extension-path', path);
             (document.head || document.documentElement).appendChild(style);
-        } catch(e) {}
+        }
+    };
+
+    for (const [path, css] of Object.entries(extensionCssData)) {
+        try { injectStyle(css, path); } catch(e) {}
     }
 
     const runInScope = (code, fileName) => {
         try {
             const keys = Object.keys(scope);
             const values = Object.values(scope);
-            const fn = new Function(...keys, \`"use strict";\\n\${code}\\n//# sourceURL=extension://\${fileName}\`);
+            const fn = new Function(...keys, '"use strict";\\n' + code + '\\n//# sourceURL=extension://' + fileName);
             fn.apply(scope.window, values);
         } catch(e) {
-            _error(\`Script execution failed [\${fileName}]:\`, e);
+            _error("Execution failed [" + fileName + "]:", e);
         }
     };
 
-    // --- Start
-    ${phases['document-start'].map(c => {
-        const lines = c.split('\n');
+    // Phased Execution
+    const runPhase = (p) => p.forEach(c => {
+        const lines = c.split('\\n');
         const fileName = lines[0].replace('// --- ', '');
-        return `runInScope(${JSON.stringify(c)}, ${JSON.stringify(fileName)});`;
-    }).join('\n')}
+        runInScope(c, fileName);
+    });
+
+    runPhase(${JSON.stringify(phases['document-start'])});
 
     if (document.readyState === 'loading') {
         await new Promise(res => document.addEventListener('DOMContentLoaded', res, { once: true }));
     }
 
-    // --- End
-    ${phases['document-end'].map(c => {
-        const lines = c.split('\n');
-        const fileName = lines[0].replace('// --- ', '');
-        return `runInScope(${JSON.stringify(c)}, ${JSON.stringify(fileName)});`;
-    }).join('\n')}
+    runPhase(${JSON.stringify(phases['document-end'])});
 
     if (typeof window.requestIdleCallback === 'function') {
         await new Promise(res => window.requestIdleCallback(res, { timeout: 2000 }));
@@ -97,14 +105,8 @@ async function executeAllScripts(scope, extensionCssData) {
         await new Promise(res => setTimeout(res, 50));
     }
 
-    // --- Idle
-    ${phases['document-idle'].map(c => {
-        const lines = c.split('\n');
-        const fileName = lines[0].replace('// --- ', '');
-        return `runInScope(${JSON.stringify(c)}, ${JSON.stringify(fileName)});`;
-    }).join('\n')}
-
-    _log('Execution complete.');
+    runPhase(${JSON.stringify(phases['document-idle'])});
+    _log('Phased execution complete.');
 }
 `;
 

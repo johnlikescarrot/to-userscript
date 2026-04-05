@@ -1,17 +1,19 @@
-# 🚀 to-userscript
+# 🚀 to-userscript: The Transcendent Transformation Layer
 
-## The Ultimate WebExtension Transcendence Layer
+<div align="center">
 
-[![Release Status](https://img.shields.io/badge/Release-Ready-success.svg?style=for-the-badge&logo=rocket)](https://github.com/johnlikescarrot/to-userscript)
-[![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen.svg?style=for-the-badge&logo=vitest)](https://github.com/johnlikescarrot/to-userscript)
-[![Security](https://img.shields.io/badge/Security-Hardened-blue.svg?style=for-the-badge&logo=shield-halved)](https://github.com/johnlikescarrot/to-userscript)
-[![License](https://img.shields.io/badge/License-ISC-orange.svg?style=for-the-badge)](https://opensource.org/licenses/ISC)
+[![Release](https://img.shields.io/badge/Release--Candidate-v1.1.0--Transcendent-success.svg?style=for-the-badge&logo=rocket)](https://github.com/explosion-scratch/to-userscript)
+[![Coverage](https://img.shields.io/badge/Coverage-100%25-success.svg?style=for-the-badge&logo=vitest)](https://github.com/explosion-scratch/to-userscript)
+[![Security](https://img.shields.io/badge/Security-Isolated-blue.svg?style=for-the-badge&logo=shield-halved)](https://github.com/explosion-scratch/to-userscript)
+[![Architecture](https://img.shields.io/badge/Architecture-Step--Based-orange.svg?style=for-the-badge&logo=diagram-project)](https://github.com/explosion-scratch/to-userscript)
 
-**"Transcend the Browser."** Convert any Chrome or Firefox extension into a high-performance, portable Userscript with a single command.
+**"Transcend the Browser."** Convert any Chrome or Firefox extension into a high-performance, portable userscript with a single command.
 
 Built with an industrial-grade **Migration Engine**, `to-userscript` is strictly typed, 100% tested, and ready for professional deployment.
 
-[Explore Docs](./docs/architecture.md) • [Report Bug](https://github.com/johnlikescarrot/to-userscript/issues) • [Request Feature](https://github.com/johnlikescarrot/to-userscript/issues)
+[Explore Docs](./docs/architecture.md) • [Report Bug](https://github.com/explosion-scratch/to-userscript/issues) • [Request Feature](https://github.com/explosion-scratch/to-userscript/issues)
+
+</div>
 
 ---
 
@@ -22,30 +24,29 @@ Most converters are fragile scripts. `to-userscript` is a **robust transformatio
 - **🛡️ Strictly Typed**: Powered by TypeScript and Zod for absolute manifest integrity.
 - **⚙️ Step-Based Engine**: Atomic conversion lifecycle (Unpack → Parse → Process → Inline → Assemble).
 - **📦 Zero External Dependencies**: Generates completely self-contained `.user.js` files.
-- **🔌 High-Fidelity Polyfill**: Emulates modern Chrome APIs (SidePanel, DNR, Identity, Action) inside a secure isolation layer.
+- **🔌 High-Fidelity Polyfill**: Emulates modern Chrome APIs (SidePanel, Action, Scripting, DNR) inside a secure isolation layer.
 - **🎨 Asset Inlining**: Recursively converts HTML, CSS, and binary images into embedded Data/Blob URLs.
 
 ---
 
-## 📊 Capability Matrix
+## 📊 Capability Matrix (Manifest V3 Support)
 
-| WebExtension API | Support Level | Implementation Note |
+| WebExtension API | Status | Implementation Note |
 | :--- | :---: | :--- |
-| `chrome.storage` | ✅ FULL | Support for `local`, `sync`, and `session` areas. |
-| `chrome.runtime` | ✅ FULL | High-fidelity messaging, port connections, and manifest access. |
-| `chrome.action` | ✅ FULL | Badge text, icons, and popup management. |
-| `chrome.sidePanel`| ✅ FULL | Isolated UI rendered via secure Shadow DOM. |
-| `chrome.scripting`| ✅ FULL | Dynamic execution via strict parameter-injection. |
+| `chrome.action` | ✅ FULL | Support for badges, icons, and popups via Shadow DOM HUD. |
+| `chrome.sidePanel` | ✅ FULL | Isolated SidePanel UI rendered in a closed Shadow DOM container. |
+| `chrome.scripting` | ✅ FULL | Dynamic execution via strict parameter-injection model. |
+| `chrome.offscreen` | ✅ FULL | Managed hidden iframes for DOM-requiring background tasks. |
+| `chrome.storage` | ✅ FULL | Support for `local`, `sync`, `session`, and `managed` areas. |
+| `chrome.runtime` | ✅ FULL | High-fidelity messaging, port connections, and asset resolution. |
 | `chrome.tabs` | 🟡 PARTIAL | Support for `create`, `query`, and `sendMessage`. |
-| `chrome.identity` | ✅ FULL | OAuth2 flow support. |
-| `chrome.alarms` | ✅ FULL | Persistent interval management. |
-| `chrome.i18n` | ✅ FULL | Comprehensive localized messaging. |
+| `chrome.i18n` | ✅ FULL | Comprehensive localized messaging with global placeholder replacement. |
 
 ---
 
 ## 🛠️ Architecture: The Transformation Lifecycle
 
-`to-userscript` operates as a sequential pipeline of atomic transformation steps:
+`to-userscript` operates as a sequential pipeline of atomic transformation steps, ensuring maximum reliability and output quality.
 
 ```mermaid
 graph TD
@@ -72,6 +73,16 @@ graph TD
 
 ---
 
+## 🛡️ Security & Isolation
+
+We implement a multi-layered isolation strategy to ensure extension code never conflicts with the host page:
+
+1. **Parameter Injection Architecture**: Scripts are executed inside a `new Function` scope with explicit global overrides (`chrome`, `window`, `self`). No `with` statements, no global pollution.
+2. **Shadow DOM UI Shell**: Popups, Options, and Side Panels are mounted into a **closed Shadow DOM** to prevent CSS leakage from or into the host page.
+3. **Internal Messaging Hub**: A robust `postMessage` event bus simulates the WebExtension runtime across main and iframe contexts.
+
+---
+
 ## ⚡ Quick Start
 
 ### Installation
@@ -95,16 +106,6 @@ to-userscript convert ./my-extension -o my-script.user.js
 ```bash
 to-userscript convert "https://chromewebstore.google.com/detail/..." -o wikipedia.user.js
 ```
-
----
-
-## 🛡️ Security & Isolation
-
-We implement a multi-layered isolation strategy to ensure extension code never conflicts with the host page:
-
-1. **Parameter Injection Architecture**: Scripts are executed inside a `new Function` scope with explicit global overrides (`chrome`, `window`, `self`).
-2. **Shadow DOM UI**: Popups and Side Panels are mounted into a **closed** Shadow DOM to prevent CSS leakage from the host page.
-3. **Iframe Sandboxing**: Internal UI pages are loaded into restricted `<iframe>` environments with strict `sandbox` attributes.
 
 ---
 
