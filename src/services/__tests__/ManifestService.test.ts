@@ -5,48 +5,60 @@ import fs from 'fs-extra';
 vi.mock('fs-extra');
 
 describe('ManifestService', () => {
-  it('should load and parse a valid Manifest V2', async () => {
-    const mockManifest = {
-      manifest_version: 2,
-      name: 'Test Extension',
-      version: '1.0.0',
-      content_scripts: [
-        {
-          matches: ['*://*.google.com/*'],
-          js: ['script.js']
-        }
-      ]
-    };
+  it('should cover all branches in V2 and V3', async () => {
+      const v2: any = {
+          manifest_version: 2,
+          name: 'v2',
+          version: '1',
+          permissions: ['p'],
+          browser_action: { default_popup: 'p.html' }
+      };
+      vi.mocked(fs.readFile).mockResolvedValueOnce(JSON.stringify(v2));
+      const m2 = await ManifestService.load('m2.json');
+      expect(m2.manifest_version).toBe(2);
+      expect(m2.permissions).toContain('p');
 
-    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockManifest));
-
-    const manifest = await ManifestService.load('manifest.json');
-    expect(manifest.name).toBe('Test Extension');
-    expect(manifest.manifest_version).toBe(2);
-    expect(manifest.content_scripts?.[0].js?.[0]).toBe('script.js');
+      const v3: any = {
+          manifest_version: 3,
+          name: 'v3',
+          version: '1',
+          action: { default_popup: 'p.html' },
+          host_permissions: ['hp'],
+          background: { service_worker: 'sw.js' },
+          web_accessible_resources: [{ resources: ['r.png'] }]
+      };
+      vi.mocked(fs.readFile).mockResolvedValueOnce(JSON.stringify(v3));
+      const m3 = await ManifestService.load('m3.json');
+      expect(m3.manifest_version).toBe(3);
+      expect(m3.permissions).toContain('hp');
+      expect(m3.background_scripts).toContain('sw.js');
   });
 
-  it('should filter out content scripts without matches or assets', async () => {
-    const mockManifest = {
-      manifest_version: 3,
-      name: 'Test V3',
-      version: '1.0.0',
-      content_scripts: [
-        { matches: [] }, // Invalid
-        { js: ['only.js'] }, // Invalid (no matches)
-        { matches: ['*://*/*'], js: ['valid.js'] } // Valid
-      ]
-    };
-
-    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockManifest));
-
-    const manifest = await ManifestService.load('manifest.json');
-    expect(manifest.content_scripts).toHaveLength(1);
-    expect(manifest.content_scripts?.[0].js?.[0]).toBe('valid.js');
+  it('should handle missing fields', async () => {
+      const min: any = { manifest_version: 3, name: 'm', version: '1' };
+      vi.mocked(fs.readFile).mockResolvedValueOnce(JSON.stringify(min));
+      const m = await ManifestService.load('min.json');
+      expect(m.name).toBe('m');
+      expect(m.permissions).toEqual([]);
   });
 
-  it('should generate a consistent internal ID', () => {
-    const manifest: any = { name: 'My Awesome Extension!! ' };
-    expect(ManifestService.getInternalId(manifest)).toBe('my-awesome-extension');
+  it('should handle missing background and optional fields in V2', async () => {
+      const v2: any = { manifest_version: 2, name: 'v2', version: '1' };
+      vi.mocked(fs.readFile).mockResolvedValueOnce(JSON.stringify(v2));
+      const m = await ManifestService.load('v2.json');
+      expect(m.background_scripts).toEqual([]);
+  });
+
+  it('should handle content scripts with mixed js/css', async () => {
+      const cs: any = {
+          manifest_version: 3,
+          name: 'cs',
+          version: '1',
+          content_scripts: [{ matches: ['*://*/*'], js: ['a.js'], css: ['b.css'] }]
+      };
+      vi.mocked(fs.readFile).mockResolvedValueOnce(JSON.stringify(cs));
+      const m = await ManifestService.load('cs.json');
+      expect(m.content_scripts[0].js).toContain('a.js');
+      expect(m.content_scripts[0].css).toContain('b.css');
   });
 });

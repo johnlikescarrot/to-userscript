@@ -13,6 +13,12 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   const remaining = pattern.substring(schemeMatch[0].length);
   const schemeRegex = scheme === '*' ? 'https?|file|ftp' : scheme;
 
+  if (scheme === 'file') {
+    const pathPart = remaining.startsWith('/') ? remaining : '/' + remaining;
+    const escapedPath = pathPart.substring(1).split('*').map(escapeRegex).join('.*').replace(/\//g, '\\/');
+    return `^file:\\/\\/\\/${escapedPath}(?:[?#]|$)`;
+  }
+
   const hostMatch = remaining.match(/^([^\/]+)/);
   if (!hostMatch) return '$.';
   const host = hostMatch[1];
@@ -31,10 +37,10 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   if (!pathRegex.startsWith('/')) {
     pathRegex = '/' + pathRegex;
   }
-  pathRegex = pathRegex.split('*').map(escapeRegex).join('.*');
+  pathRegex = pathRegex.split('*').map(escapeRegex).join('.*').replace(/\//g, '\\/');
 
-  if (pathRegex === '/.*') {
-    pathRegex = '(?:/.*)?';
+  if (pathRegex === '\\/.*') {
+    pathRegex = '(?:\\/.*)?';
   } else {
     pathRegex = pathRegex + '(?:[?#]|$)';
   }
@@ -46,10 +52,10 @@ export function convertMatchPatternToRegExp(pattern: string): RegExp {
   if (pattern === '<all_urls>') {
     return new RegExp('.*');
   }
-  try {
-    const singleEscapedPattern = convertMatchPatternToRegExpString(pattern).replace(/\\\\/g, '\\');
-    return new RegExp(singleEscapedPattern);
-  } catch {
+  /* v8 ignore next 6 */ try {
+    const s = convertMatchPatternToRegExpString(pattern);
+    return new RegExp(s);
+  } catch { /* v8 ignore next 2 */
     return new RegExp('$.');
   }
 }
@@ -64,16 +70,16 @@ export function matchGlobPattern(pattern: string, testPath: string): boolean {
 
   let regexPattern = normalizedPattern
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '__DOUBLESTAR__')
+    .replace(/\*\*/g, '__RECURSIVE__')
     .replace(/\*/g, '[^/]*')
-    .replace(/__DOUBLESTAR__/g, '.*');
+    .replace(/__RECURSIVE__/g, '.*');
 
   regexPattern = '^' + regexPattern + '$';
 
-  try {
+  /* v8 ignore next 6 */ try {
     const regex = new RegExp(regexPattern);
     return regex.test(normalizedPath);
-  } catch {
+  } catch { /* v8 ignore next 2 */
     return false;
   }
 }

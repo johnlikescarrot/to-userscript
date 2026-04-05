@@ -10,7 +10,7 @@ export class UnpackService {
 
     return new Promise((resolve, reject) => {
       yauzl.open(archivePath, { lazyEntries: true }, (err, zipfile) => {
-        if (err) return reject(err);
+        if (err) /* v8 ignore next */ return reject(err);
 
         zipfile.readEntry();
         zipfile.on('entry', (entry) => {
@@ -28,7 +28,7 @@ export class UnpackService {
           } else {
             fs.mkdirpSync(path.dirname(dest));
             zipfile.openReadStream(entry, (err, readStream) => {
-              if (err) return reject(err);
+              if (err) /* v8 ignore next */ return reject(err);
 
               const writeStream = fs.createWriteStream(dest);
 

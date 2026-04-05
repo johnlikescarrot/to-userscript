@@ -19,11 +19,16 @@ describe('DownloadService', () => {
   });
 
   it('should get correct CRX URL from ID', () => {
-    const url = DownloadService.getCrxUrl('abcdefghijklmnopqrstuvwxyz123456');
-    expect(url).toContain('abcdefghijklmnopqrstuvwxyz123456');
+    const url = DownloadService.getCrxUrl('abcdefghijklmnopabcdefghijklmnop');
+    expect(url).toContain('abcdefghijklmnopabcdefghijklmnop');
   });
 
   it('should throw on invalid ID', () => {
     expect(() => DownloadService.getCrxUrl('short')).toThrow();
   });
 });
+
+  it('should throw on non-ok response', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, statusText: 'Not Found' } as any);
+    await expect(DownloadService.download('http://bad.url', 'dest')).rejects.toThrow('Failed to download: Not Found');
+  });

@@ -13,12 +13,14 @@ export async function convertExtension(config: ConversionConfig) {
   let inputDir = config.inputDir;
   let isTempDir = false;
 
-  if (await fs.pathExists(inputDir)) {
-    const stats = await fs.stat(inputDir);
-    if (stats.isFile()) {
-      inputDir = await UnpackService.unpack(inputDir);
-      isTempDir = true;
-    }
+  if (!(await fs.pathExists(inputDir))) {
+    throw new Error(`Input directory or archive not found: ${inputDir}`);
+  }
+
+  const stats = await fs.stat(inputDir);
+  if (stats.isFile()) {
+    inputDir = await UnpackService.unpack(inputDir);
+    isTempDir = true;
   }
 
   try {
@@ -51,7 +53,6 @@ export async function convertExtension(config: ConversionConfig) {
       }
     };
   } finally {
-    // P2: Cleanup unpacked temp directory
     if (isTempDir && inputDir) {
       await fs.remove(inputDir).catch(() => {});
     }

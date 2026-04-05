@@ -60,6 +60,9 @@ export const ManifestV3Schema = z.object({
     page: z.string().optional(),
     open_in_tab: z.boolean().optional(),
   }).optional(),
+  side_panel: z.object({
+    default_path: z.string().optional(),
+  }).optional(),
   web_accessible_resources: z.array(z.object({
     resources: z.array(z.string()),
     matches: z.array(z.string()).optional(),
@@ -73,6 +76,7 @@ export interface NormalizedManifest {
   name: string;
   version: string;
   description: string;
+  permissions: string[];
   icons: Record<string, string>;
   content_scripts: z.infer<typeof ContentScriptSchema>[];
   action: {

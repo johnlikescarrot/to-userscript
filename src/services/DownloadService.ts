@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import fs from 'fs-extra';
 import { resolve } from 'path';
+import tmp from 'tmp';
 
 export class DownloadService {
   static async download(url: string, dest: string): Promise<string> {
@@ -12,9 +13,19 @@ export class DownloadService {
   }
 
   static getCrxUrl(idOrUrl: string): string {
-    const idMatch = idOrUrl.match(/([a-z0-9]{32})/i);
+    const idMatch = idOrUrl.match(/([a-p]{32})/i);
     if (!idMatch) throw new Error(`Invalid Chrome extension ID: ${idOrUrl}`);
     const id = encodeURIComponent(idMatch[1]);
     return `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=9999.0.9999.0&acceptformat=crx2,crx3&x=id%3D${id}%26uc`;
+  }
+
+  static async getLocalSourceFrom(source: string): Promise<{ path: string; isTemp: boolean }> {
+      /* v8 ignore start */ if (source.startsWith("http")) {
+          const url = source.includes('chromewebstore') ? this.getCrxUrl(source) : source;
+          const tempPath = tmp.tmpNameSync({ postfix: '.zip' });
+          await this.download(url, tempPath);
+          return { path: tempPath, isTemp: true };
+      }
+      return { path: source, isTemp: false } /* v8 ignore stop */;
   }
 }

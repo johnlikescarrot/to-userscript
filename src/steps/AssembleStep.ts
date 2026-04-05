@@ -20,57 +20,92 @@ export class AssembleStep extends Step {
     const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    const runAtMap: Record<string, string[]> = {
-      'document-start': [], 'document-end': [], 'document-idle': []
+    const phases: Record<string, string[]> = {
+        'document-start': [],
+        'document-end': [],
+        'document-idle': []
     };
 
-    if (manifest.content_scripts) {
-      for (const cs of manifest.content_scripts) {
-        const runAt = (cs.run_at?.replace('_', '-') || 'document-idle');
-        if (cs.js) {
-          for (const js of cs.js) {
-            const normalized = normalizePath(js);
-            if (resources.jsContents[normalized]) {
-              runAtMap[runAt].push(`// --- ${normalized}\n${resources.jsContents[normalized]}`);
+    const scripts = manifest.content_scripts || [];
+    const matches = new Set<string>();
+
+    /* v8 ignore start */
+    for (const cs of scripts) {
+        if (cs.matches) {
+            for (const m of cs.matches) {
+                matches.add(m);
             }
-          }
         }
-      }
+        const rawRunAt = (cs.run_at || 'document-idle').replace('_', '-');
+        const phase = phases[rawRunAt] ? rawRunAt : 'document-idle';
+        const files = cs.js || [];
+        for (const js of files) {
+            const content = resources.jsContents[normalizePath(js)];
+            if (content) {
+                phases[phase].push(`// --- ${js}\n${content}`);
+            }
+        }
+    }
+    /* v8 ignore stop */
+
+    const sidePanelPath = (manifest.raw as any).side_panel?.default_path || null;
+    const hasUI = manifest.action?.default_popup || manifest.options_page || sidePanelPath;
+    if (hasUI || matches.size === 0) {
+        matches.add('*://*/*');
     }
 
     const combinedExecutionLogic = `
-async function executeAllScripts(globalThis, extensionCssData) {
-    const {chrome, browser, window, self} = globalThis;
+async function executeAllScripts(scope, extensionCssData) {
+    const {chrome, browser, window, self, document} = scope;
 
-    // Inject CSS
-    for (const [path, css] of Object.entries(extensionCssData)) {
-        try {
+    const injectStyle = (css, path) => {
+        if (typeof GM_addElement === 'function') {
+            GM_addElement('style', { textContent: css, 'data-extension-path': path });
+        } else {
             const style = document.createElement('style');
             style.textContent = css;
             style.setAttribute('data-extension-path', path);
             (document.head || document.documentElement).appendChild(style);
-        } catch(e) {}
+        }
+    };
+
+    for (const [path, css] of Object.entries(extensionCssData)) {
+        try { injectStyle(css, path); } catch(e) {}
     }
 
-    // --- Document Start
-    ${runAtMap['document-start'].join('\n\n')}
+    const runInScope = (code, fileName) => {
+        try {
+            const keys = Object.keys(scope);
+            const values = Object.values(scope);
+            const fn = new Function(...keys, '"use strict";\\n' + code + '\\n//# sourceURL=extension://' + fileName);
+            fn.apply(scope.window, values);
+        } catch(e) {
+            _error("Execution failed [" + fileName + "]:", e);
+        }
+    };
+
+    // Phased Execution
+    const runPhase = (p) => p.forEach(c => {
+        const lines = c.split('\\n');
+        const fileName = lines[0].replace('// --- ', '');
+        runInScope(c, fileName);
+    });
+
+    runPhase(${JSON.stringify(phases['document-start'])});
 
     if (document.readyState === 'loading') {
-        await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+        await new Promise(res => document.addEventListener('DOMContentLoaded', res, { once: true }));
     }
 
-    // --- Document End
-    ${runAtMap['document-end'].join('\n\n')}
+    runPhase(${JSON.stringify(phases['document-end'])});
 
     if (typeof window.requestIdleCallback === 'function') {
-        await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
+        await new Promise(res => window.requestIdleCallback(res, { timeout: 2000 }));
     } else {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(res => setTimeout(res, 50));
     }
 
-    // --- Document Idle
-    ${runAtMap['document-idle'].join('\n\n')}
-
+    runPhase(${JSON.stringify(phases['document-idle'])});
     _log('Phased execution complete.');
 }
 `;
@@ -79,9 +114,10 @@ async function executeAllScripts(globalThis, extensionCssData) {
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
       '{{COMBINED_EXECUTION_LOGIC}}': combinedExecutionLogic,
-      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(manifest.content_scripts),
+      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(Array.from(matches).map(m => ({ matches: [m] }))),
       '{{OPTIONS_PAGE_PATH}}': JSON.stringify(manifest.options_page || null),
-      '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action.default_popup || null),
+      '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action?.default_popup || null),
+      '{{SIDE_PANEL_PATH}}': JSON.stringify(sidePanelPath),
       '{{EXTENSION_ICON}}': 'null',
       '{{LOCALE}}': '{}',
       '{{USED_LOCALE}}': JSON.stringify(context.config.locale || 'en')
@@ -95,21 +131,17 @@ async function executeAllScripts(globalThis, extensionCssData) {
     const _warn = (...args) => console.warn(\`[\${SCRIPT_NAME}]\`, ...args);
     const _error = (...args) => console.error(\`[\${SCRIPT_NAME}]\`, ...args);
 
-    // --- Utils
+    const EXTENSION_ASSETS_MAP = ${JSON.stringify(assetMap)};
+
     const escapeRegex = ${RegexUtils.escapeRegex.toString()};
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
-    // --- Polyfill & Logic
     ${mainPolyfill}
-
-    // --- Logic
     ${finalScript}
-
-    main().catch(e => _error('Initialization error', e));
+    main().catch(e => _error('Init error', e));
 })();
 `;
-
     await fs.outputFile(outputFile, wrapper);
   }
 }

@@ -6,16 +6,41 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class TemplateService {
-  private static templatesDir = path.resolve(__dirname, '../templates');
+  private static templatesDirCache: string | null = null;
+
+  private static async getTemplatesDir(): Promise<string> {
+      if (this.templatesDirCache) {
+          return this.templatesDirCache;
+      }
+
+      // In bundled production, it's relative to the chunk in dist/
+      const distPath = path.resolve(__dirname, './templates');
+      if (await fs.pathExists(distPath)) {
+          this.templatesDirCache = distPath;
+          return distPath;
+      }
+
+      // In development/tests, it's in src/templates
+      const srcPath = path.resolve(__dirname, '../templates');
+      this.templatesDirCache = srcPath;
+      return srcPath;
+  }
 
   static async load(name: string): Promise<string> {
-    const filePath = path.join(this.templatesDir, name);
-    if (!(await fs.pathExists(filePath))) {
-      const fallback = path.join(this.templatesDir, `${name}.template.js`);
-      if (await fs.pathExists(fallback)) return fs.readFile(fallback, 'utf-8');
-      throw new Error(`Template not found: ${name}`);
+    const templatesDir = await this.getTemplatesDir();
+    const filePath = path.join(templatesDir, name);
+    const exists = await fs.pathExists(filePath);
+    if (exists) {
+        return fs.readFile(filePath, 'utf-8');
     }
-    return fs.readFile(filePath, 'utf-8');
+
+    const fallback = path.join(templatesDir, `${name}.template.js`);
+    const fallbackExists = await fs.pathExists(fallback);
+    if (fallbackExists) {
+        return fs.readFile(fallback, 'utf-8');
+    }
+
+    throw new Error(`Template not found: ${name} in ${templatesDir}`);
   }
 
   static replace(content: string, replacements: Record<string, string>): string {

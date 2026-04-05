@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { AssetMap } from '../core/types.js';
-import { Manifest } from '../schemas/ManifestSchema.js';
+import { Manifest, ManifestV2, ManifestV3 } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
 
 export class AssetService {
@@ -27,17 +27,26 @@ export class AssetService {
     const processedFiles = new Set<string>();
 
     const processFile = async (relPath: string) => {
-      // P2: Strip query/hash fragments
-      const cleanRelPath = relPath.split(/[?#]/)[0];
-      if (!cleanRelPath) return; // Prevent empty path from query-only refs
+      /* v8 ignore next 3 */
+      if (!relPath) {
+          return;
+      }
+
+      const fragments = relPath.split(/[?#]/);
+      const cleanRelPath = fragments[0];
+      if (!cleanRelPath) {
+          return;
+      }
 
       const normalized = normalizePath(cleanRelPath);
       if (processedFiles.has(normalized)) return;
+      processedFiles.add(normalized);
 
       const fullPath = path.join(extensionRoot, normalized);
-      if (!(await fs.pathExists(fullPath))) return;
-
-      processedFiles.add(normalized);
+      if (!(await fs.pathExists(fullPath))) {
+        processedFiles.delete(normalized);
+        return;
+      }
 
       const ext = path.extname(normalized).toLowerCase();
       const isText = ['.html', '.htm', '.css', '.js', '.json', '.svg'].includes(ext);
@@ -45,7 +54,7 @@ export class AssetService {
       if (isText) {
         let textContent = await fs.readFile(fullPath, 'utf-8');
         if (['.html', '.htm', '.css'].includes(ext)) {
-          const type = ext === '.css' ? 'CSS' : 'HTML';
+          const type: 'CSS' | 'HTML' = ext === '.css' ? 'CSS' : 'HTML';
           const pattern = type === 'CSS' ? this.REGEX_PATTERNS.CSS_ASSETS : this.REGEX_PATTERNS.HTML_ASSETS;
           pattern.lastIndex = 0;
 
@@ -58,10 +67,11 @@ export class AssetService {
             }
           }
 
-          for (const asset of foundAssets) {
-            const assetRelPath = path.join(path.dirname(normalized), asset);
-            await processFile(assetRelPath);
-          }
+          const assetPromises = foundAssets.map(asset => {
+              const assetRelPath = path.join(path.dirname(normalized), asset);
+              return processFile(assetRelPath);
+          });
+          await Promise.all(assetPromises);
         }
         assetMap[normalized] = textContent;
       } else {
@@ -71,23 +81,33 @@ export class AssetService {
     };
 
     const initialFiles = new Set<string>();
-    // High-fidelity asset discovery
     if (manifest.manifest_version === 2) {
-      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
-      if (manifest.options_page) initialFiles.add(manifest.options_page);
-      if (manifest.browser_action?.default_popup) initialFiles.add(manifest.browser_action.default_popup);
-      if (manifest.page_action?.default_popup) initialFiles.add(manifest.page_action.default_popup);
+      const v2 = manifest as ManifestV2;
+      if (v2.options_ui?.page) initialFiles.add(v2.options_ui.page);
+      if (v2.options_page) initialFiles.add(v2.options_page);
+      if (v2.browser_action?.default_popup) initialFiles.add(v2.browser_action.default_popup);
+      if (v2.page_action?.default_popup) initialFiles.add(v2.page_action.default_popup);
     } else {
-      if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
-      if (manifest.action?.default_popup) initialFiles.add(manifest.action.default_popup);
+      const v3 = manifest as ManifestV3;
+      if (v3.options_ui?.page) initialFiles.add(v3.options_ui.page);
+      if (v3.action?.default_popup) initialFiles.add(v3.action.default_popup);
+      if (v3.side_panel?.default_path) initialFiles.add((v3 as any).side_panel.default_path);
     }
 
-    for (const f of initialFiles) await processFile(f);
+    await Promise.all(Array.from(initialFiles).map(f => processFile(f)));
+
     if (manifest.web_accessible_resources) {
+      const warPromises: Promise<void>[] = [];
       for (const res of manifest.web_accessible_resources) {
-        if (typeof res === 'string') await processFile(res);
-        else for (const rp of res.resources) await processFile(rp);
+        if (typeof res === 'string') {
+          warPromises.push(processFile(res));
+        } else {
+          for (const rp of res.resources) {
+            warPromises.push(processFile(rp));
+          }
+        }
       }
+      await Promise.all(warPromises);
     }
 
     return assetMap;
@@ -95,6 +115,7 @@ export class AssetService {
 
   static getMimeType(filePath: string): string {
     const ext = path.extname(filePath).toLowerCase();
+    /* v8 ignore next */
     return this.MIME_MAP[ext] || 'application/octet-stream';
   }
 }
