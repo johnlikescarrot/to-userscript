@@ -4,6 +4,20 @@ import { Manifest } from '../schemas/ManifestSchema.js';
 import { ManifestService } from './ManifestService.js';
 
 export class PolyfillService {
+  private static MIME_MAP: Record<string, string> = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "svg": "image/svg+xml",
+    "json": "application/json",
+    "webp": "image/webp",
+    "ico": "image/x-icon",
+    "woff": "font/woff",
+    "woff2": "font/woff2",
+    "ttf": "font/ttf"
+  };
+
   static async build(
     target: 'userscript' | 'vanilla' | 'postmessage',
     assetMap: AssetMap,
@@ -32,8 +46,13 @@ function _base64ToUint8Array(base64) {
         const data = window.EXTENSION_ASSETS_MAP[cleanPath];
         if (!data) return path;
 
-        const isText = ["html", "htm", "js", "css", "json", "svg"].some(ext => cleanPath.endsWith(ext));
-        const blob = isText ? new Blob([data], { type: "text/plain" }) : new Blob([_base64ToUint8Array(data)]);
+        const ext = (cleanPath.split(".").pop() || "").toLowerCase();
+        const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
+
+        const mimeMap = ${JSON.stringify(this.MIME_MAP)};
+        const mime = isText ? "text/plain" : (mimeMap[ext] || "application/octet-stream");
+
+        const blob = isText ? new Blob([data], { type: mime }) : new Blob([_base64ToUint8Array(data)], { type: mime });
         return URL.createObjectURL(blob);
       }
     `;

@@ -65,6 +65,7 @@ function buildPolyfill({ isBackground = false } = {}) {
           const { func, files, args } = details;
           try {
               if (func) {
+                  // Execute and await for standard async contract compliance
                   const res = await func(...(args || []));
                   return [{ result: res, frameId: 0 }];
               }
@@ -113,8 +114,9 @@ function buildPolyfill({ isBackground = false } = {}) {
           }
           if (files) {
               for (const file of files) {
-                  const styles = document.querySelectorAll('style[data-scripting-file]');
-                  for (const s of styles) if (s.getAttribute('data-scripting-file') === file) s.remove();
+                  // Precise removal using attribute-equals selector
+                  const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(file)}"]`);
+                  for (const s of styles) s.remove();
               }
           }
       }
@@ -184,7 +186,6 @@ function buildPolyfill({ isBackground = false } = {}) {
     }
   };
 
-  // Full backward compatibility aliases for Manifest V2
   polyfill.browserAction = polyfill.action;
   polyfill.pageAction = polyfill.action;
   return polyfill;

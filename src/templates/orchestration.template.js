@@ -26,10 +26,29 @@ function _createAssetUrl(path = "") {
   if (typeof assetData === "undefined") return path;
 
   const ext = (path.split(".").pop() || "").toLowerCase();
-  const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
-  const mime = "application/octet-stream";
 
-  if (isText) return URL.createObjectURL(new Blob([assetData], { type: "text/plain" }));
+  const mimeMap = {
+      "html": "text/html",
+      "htm": "text/html",
+      "js": "text/javascript",
+      "css": "text/css",
+      "json": "application/json",
+      "png": "image/png",
+      "jpg": "image/jpeg",
+      "jpeg": "image/jpeg",
+      "gif": "image/gif",
+      "svg": "image/svg+xml",
+      "webp": "image/webp",
+      "ico": "image/x-icon",
+      "woff": "font/woff",
+      "woff2": "font/woff2",
+      "ttf": "font/ttf"
+  };
+
+  const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
+  const mime = mimeMap[ext] || "application/octet-stream";
+
+  if (isText) return URL.createObjectURL(new Blob([assetData], { type: mime }));
   return URL.createObjectURL(_base64ToBlob(assetData, mime));
 }
 
@@ -44,13 +63,8 @@ async function main() {
   let matched = false;
 
   for (const config of CONTENT_SCRIPT_CONFIGS_FOR_MATCHING) {
-    if (config.matches && config.matches.some(p => {
-        try {
-            return convertMatchPatternToRegExp(p).test(currentUrl);
-        } catch(e) {
-            return currentUrl.includes(p);
-        }
-    })) {
+    // Robust matching logic using RegexUtils.
+    if (config.matches && config.matches.some(p => convertMatchPatternToRegExp(p).test(currentUrl))) {
       matched = true;
       break;
     }

@@ -133,4 +133,4 @@ We welcome transcendent contributions!
 
 ## 📜 License
 
-ISC © 2024. Part of the **Ultimate Project** initiative.
+ISC © 2024-2026. Part of the **Ultimate Project** initiative.
