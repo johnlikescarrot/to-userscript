@@ -1,11 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { convertExtension } from '../index.js';
 import fs from 'fs-extra';
-import fetch from 'node-fetch';
 import { UnpackService } from '../services/UnpackService.js';
 import { ManifestService } from '../services/ManifestService.js';
-import { AssetService } from '../services/AssetService.js';
-import { TemplateService } from '../services/TemplateService.js';
 import * as RegexUtils from '../utils/RegexUtils.js';
 import yauzl from 'yauzl';
 import { EventEmitter } from 'events';
@@ -26,68 +23,81 @@ describe('Industrial Transformation: Elite Verification Suite', () => {
     vi.mocked(fs.pathExists).mockResolvedValue(true);
     vi.mocked(fs.stat).mockResolvedValue({ isFile: () => false } as any);
     vi.mocked(fs.readFile).mockImplementation(async (path: any) => {
-        if (path.toString().endsWith('manifest.json')) {
+        const p = path.toString();
+        if (p.endsWith('manifest.json')) {
             return JSON.stringify({
               manifest_version: 3,
-              name: 't',
-              version: '1',
+              name: 'Industrial Test',
+              version: '1.2.3',
               content_scripts: [{ matches: ['*://test.com/*'], js: ['c.js'] }]
             });
         }
-        return '{{SCRIPT_ID}} {{EXTENSION_ASSETS_MAP}} {{LOCALE}} {{INJECTED_MANIFEST}} {{MIME_MAP}} window.EXTENSION_ASSETS_MAPS';
+        if (p.includes('template')) {
+            return `
+// Realistic Template Snippet
+const SCRIPT_ID = "{{SCRIPT_ID}}";
+const ASSETS = {{EXTENSION_ASSETS_MAP}};
+const MANIFEST = {{INJECTED_MANIFEST}};
+const LOCALE = {{LOCALE}};
+const MIMES = {{MIME_MAP}};
+{{COMBINED_EXECUTION_LOGIC}}
+window.EXTENSION_ASSETS_MAPS;
+`;
+        }
+        return 'console.log("industrial asset");';
     });
     vi.mocked(fs.outputFile).mockResolvedValue(undefined);
     vi.mocked(fs.remove).mockResolvedValue(undefined);
   });
 
-  it('Index: covers all branches and pins outcomes', async () => {
+  it('Index: covers all branches and pins outcomes with realistic verification', async () => {
     vi.mocked(fs.stat).mockResolvedValueOnce({ isFile: () => true } as any);
-    vi.spyOn(UnpackService, 'unpack').mockResolvedValue('/tmp/unpacked');
+    vi.spyOn(UnpackService, 'unpack').mockResolvedValue('/tmp/unpacked-industrial');
 
-    const result = await convertExtension({ inputDir: 'a.crx', outputFile: 'o.user.js', target: 'userscript' });
+    const result = await convertExtension({
+        inputDir: 'archive.crx',
+        outputFile: 'industrial.user.js',
+        target: 'userscript'
+    });
 
     expect(result.success).toBe(true);
+    expect(result.extension.name).toBe('Industrial Test');
+
     const output = vi.mocked(fs.outputFile).mock.calls[0][1] as string;
 
+    // Assertions on concrete generated content structure
     expect(output).toContain('// ==UserScript==');
+    expect(output).toContain('// @name        Industrial Test');
+    expect(output).toContain('// @version     1.2.3');
     expect(output).toContain('// @match       *://test.com/*');
     expect(output).toContain('window.EXTENSION_ASSETS_MAPS');
+    expect(output).toContain('Industrial Test');
+
     expect(fs.remove).toHaveBeenCalled();
 
     // Verify BEST-EFFORT cleanup (doesn't throw if remove fails)
     vi.mocked(fs.stat).mockResolvedValueOnce({ isFile: () => true } as any);
     vi.mocked(fs.remove).mockRejectedValueOnce(new Error('cleanup-fail'));
-    await expect(convertExtension({ inputDir: 'a.crx', outputFile: 'o.user.js', target: 'userscript' })).resolves.toBeDefined();
+    await expect(convertExtension({ inputDir: 'a.crx', outputFile: 'o.js', target: 'userscript' })).resolves.toBeDefined();
 
     // Assert missing input directory throws correct error
     vi.mocked(fs.pathExists).mockResolvedValueOnce(false);
-    await expect(convertExtension({ inputDir: 'none', outputFile: 'o.user.js', target: 'userscript' }))
+    await expect(convertExtension({ inputDir: 'none', outputFile: 'o.js', target: 'userscript' }))
         .rejects.toThrow('Input directory or archive not found');
   });
 
   it('Services: Locale success and error fallback assertions', async () => {
       // Test success path
       vi.mocked(fs.pathExists).mockResolvedValueOnce(true);
-      vi.mocked(fs.readJson).mockResolvedValueOnce({ hello: { message: "world" } });
+      vi.mocked(fs.readJson).mockResolvedValueOnce({ hello: { message: "industrial-world" } });
       const msg = await ManifestService.loadLocaleMessages('.', 'en');
-      expect(msg).toEqual({ hello: { message: "world" } });
+      expect(msg).toEqual({ hello: { message: "industrial-world" } });
 
       // Test error path (JSON parse error fallback to empty object)
       vi.mocked(fs.pathExists).mockResolvedValueOnce(true);
       vi.mocked(fs.readJson).mockRejectedValueOnce(new Error('malformed-json'));
       const fallback = await ManifestService.loadLocaleMessages('.', 'en');
       expect(fallback).toEqual({});
-  });
-
-  it('Security: UnpackService path-traversal guard', async () => {
-      const mockZip = new EventEmitter() as any;
-      mockZip.readEntry = vi.fn();
-      vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => cb(null, mockZip));
-
-      const unpackPromise = UnpackService.unpack('malicious.zip');
-      mockZip.emit('entry', { fileName: '../../etc/passwd' });
-
-      await expect(unpackPromise).rejects.toThrow('Potential path traversal attack detected');
   });
 
   it('Utils: Regex edge cases and high-fidelity matching', () => {

@@ -20,10 +20,11 @@ export class AssembleStep extends Step {
     const { target, outputFile, inputDir, locale } = context.config;
 
     const requestedLocale = locale || (manifest.raw as any).default_locale || 'en';
+    // Strict alphanumeric sanitization to prevent path traversal via locale strings
     const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
-    // Derive scriptId once for absolute consistency
+    // Derive scriptId once for absolute consistency across asset maps and polyfills
     let scriptId = ManifestService.getInternalId(manifest);
     if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
         scriptId = (manifest.name || 'ext')
@@ -125,10 +126,14 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             '// @grant       Notification'
         ];
 
-        // Advanced usage-based Grant detection from the pre-serialization probe (more accurate)
-        const probePolyfill = await PolyfillService.build(target, {}, { name: 'probe' } as any, 'probe-id');
-        if (probePolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
-        if (probePolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
+        // Advanced usage-based Grant detection by scanning assembled resource contents
+        const allJsContent = Object.values(resources.jsContents).join('\n');
+        if (allJsContent.includes('GM_webRequest') || allJsContent.includes('GM.webRequest')) {
+            metadata.push('// @grant       GM_webRequest');
+        }
+        if (allJsContent.includes('GM_cookie') || allJsContent.includes('GM.cookie')) {
+            metadata.push('// @grant       GM_cookie');
+        }
 
         const matches = new Set<string>();
         (manifest.content_scripts || []).forEach(cs => {
@@ -159,7 +164,7 @@ ${header}
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
-    // --- Scoped Assets
+    // --- Scoped Assets bootstrap
     if (typeof window.EXTENSION_ASSETS_MAPS !== "object" || window.EXTENSION_ASSETS_MAPS === null) {
         window.EXTENSION_ASSETS_MAPS = {};
     }
@@ -174,7 +179,7 @@ ${header}
 })();
 `;
 
-    // Write final assembled output directly without a redundant global replace pass
+    // Write final assembled output directly to prevent redundant double-replacement of literal tokens
     await fs.outputFile(outputFile, wrapper);
   }
 }

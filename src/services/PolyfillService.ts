@@ -1,7 +1,6 @@
 import { TemplateService } from './TemplateService.js';
 import { AssetMap } from '../core/types.js';
 import { Manifest } from '../schemas/ManifestSchema.js';
-import { ManifestService } from './ManifestService.js';
 import { AssetService } from './AssetService.js';
 
 export class PolyfillService {
@@ -53,7 +52,7 @@ function _base64ToUint8Array(base64) {
     let polyfillBody = polyfillTemplate
       .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
       .replace(/{{SCRIPT_ID}}/g, internalId)
-      .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
+      .replace('{{GETURL_IMPL}}', getURLImpl)
       .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest));
 
     let combined = `

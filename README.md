@@ -53,7 +53,7 @@ to-userscript convert ./my-extension -o my-script.user.js --beautify
 - `-o, --output`: Specify output path.
 - `-t, --target`: `userscript` (default) or `vanilla`.
 - `--minify`: Compress generated code.
-- `--beautify`: Format output for debugging.
+- `--beautify`: Format output for readability.
 - `--force`: Overwrite existing files.
 
 ---
@@ -61,11 +61,11 @@ to-userscript convert ./my-extension -o my-script.user.js --beautify
 ## 🛠️ Architecture: The Migration Engine
 
 **Summary of Conversion Pipeline:**
-1. **Unpack**: Extracts extension source (URL, ZIP, or Dir) to a secure temporary directory.
+1. **Unpack**: Extracts extension source (URL, ZIP, or Dir) to a secure temporary directory using `os.tmpdir()`.
 2. **LoadManifestStep**: Validates and normalizes V2 or V3 manifests into a canonical structure.
 3. **ProcessResourcesStep**: Maps all internal JavaScript and CSS resources defined in the manifest.
 4. **GenerateAssetsStep**: Recursively inlines HTML, CSS, images, and fonts into a virtual, script-scoped asset map.
-5. **AssembleStep**: Dynamically detects required `@grant` permissions, injects the Unified Polyfill Layer, and produces the self-contained `.user.js` file.
+5. **AssembleStep**: Dynamically detects required `@grant` permissions by scanning resources, injects the Unified Polyfill Layer, and produces the self-contained `.user.js` file.
 
 **Accessible Summary**: The pipeline takes an extension source, extracts it, parses the manifest to understand the structure, processes all scripts and assets (including recursive inlining of CSS/HTML), and assembles everything into a final userscript with a full polyfill layer.
 
@@ -120,7 +120,7 @@ If a website's **Content Security Policy** blocks Blob URLs or Data URLs:
 
 We take reliability seriously.
 - **Elite Coverage**: Core logic is 97.2% verified.
-- **Security First**: Built-in path traversal protection in `UnpackService`.
+- **Security First**: Built-in path traversal protection in `UnpackService` and metadata-injection sanitization.
 - **Modern Build**: Compiled with `tsup` for maximum performance and ESM compatibility.
 
 ---

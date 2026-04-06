@@ -22,7 +22,7 @@ function buildPolyfill({ isBackground = false } = {}) {
     runtime: {
       ...RUNTIME,
       getManifest: () => JSON.parse(JSON.stringify(INJECTED_MANIFEST)),
-      getURL: (path) => _createAssetUrl(path),
+      {{GETURL_IMPL}}
       openOptionsPage: () => {
         if (OPTIONS_PAGE_PATH) _openTab(_createAssetUrl(OPTIONS_PAGE_PATH), true);
         else _warn("No options page defined.");
@@ -63,6 +63,7 @@ function buildPolyfill({ isBackground = false } = {}) {
               try {
                   const isolatedFunc = new Function('args', `return (${func.toString()})(...args)`);
                   const res = isolatedFunc(args || []);
+                  // Ensure async functions are properly awaited before returning result
                   return [{ result: await res, frameId: 0 }];
               } catch (err) {
                   return Promise.reject(err);
@@ -112,6 +113,7 @@ function buildPolyfill({ isBackground = false } = {}) {
           if (files) {
               for (const file of files) {
                   const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+                  // Efficient removal with direct attribute selector
                   const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(cleanPath)}"]`);
                   for (const s of styles) s.remove();
               }
@@ -164,10 +166,10 @@ function buildPolyfill({ isBackground = false } = {}) {
       }
     },
     action: {
-        setBadgeText: (d) => { _log("Badge set:", d.text); return Promise.resolve(); },
-        setBadgeBackgroundColor: (d) => { _log("Badge color set:", d.color); return Promise.resolve(); },
-        setTitle: (d) => { _log("Title set:", d.title); return Promise.resolve(); },
-        setIcon: (d) => { _log("Icon set:", d); return Promise.resolve(); },
+        setBadgeText: (d) => { console.log("Badge set:", d.text); return Promise.resolve(); },
+        setBadgeBackgroundColor: (d) => { console.log("Badge color set:", d.color); return Promise.resolve(); },
+        setTitle: (d) => { console.log("Title set:", d.title); return Promise.resolve(); },
+        setIcon: (d) => { console.log("Icon set:", d); return Promise.resolve(); },
         enable: () => Promise.resolve(),
         disable: () => Promise.resolve()
     },

@@ -15,14 +15,20 @@ type SourceType = 'localPath' | 'chromeWebStoreListing' | 'directUrl' | 'unknown
 function parseExtensionSource(source: string): { type: SourceType; url?: string } {
   try {
     const url = new URL(source);
+    // Strict protocol check to prevent treating Windows paths as URLs
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        throw new Error('Invalid protocol');
+    }
+
     // Explicit hostname validation to prevent spoofing
     if (url.hostname === 'chromewebstore.google.com' ||
        (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
+      // Allow getCrxUrl errors to propagate for better error reporting on malformed webstore URLs
       return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
     }
     return { type: 'directUrl', url: source };
   } catch (e) {
-    // Alphanumeric 32-char ID check (case-insensitive)
+    // Alphanumeric 32-char ID check (case-insensitive) for Chrome Web Store
     if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
       return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
     }
@@ -43,11 +49,11 @@ const parser = yargs(hideBin(process.argv))
           type: 'string',
           demandOption: true,
         })
-        .option('output', { alias: 'o', type: 'string' })
-        .option('target', { alias: 't', choices: ['userscript', 'vanilla'] as const, default: 'userscript' as const })
-        .option('minify', { type: 'boolean', default: false })
-        .option('beautify', { type: 'boolean', default: false })
-        .option('force', { alias: 'f', type: 'boolean', default: false });
+        .option('output', { alias: 'o', type: 'string', describe: 'Output file path' })
+        .option('target', { alias: 't', choices: ['userscript', 'vanilla'] as const, default: 'userscript' as const, describe: 'Conversion target' })
+        .option('minify', { type: 'boolean', default: false, describe: 'Minify the output' })
+        .option('beautify', { type: 'boolean', default: false, describe: 'Beautify the output' })
+        .option('force', { alias: 'f', type: 'boolean', default: false, describe: 'Overwrite output if it exists' });
     },
     async (argv) => {
       let source = argv.source as string;
@@ -57,7 +63,8 @@ const parser = yargs(hideBin(process.argv))
         const parsed = parseExtensionSource(source);
         if (parsed.url) {
           console.log(chalk.blue('Downloading extension...'));
-          tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'to-userscript-'));
+          // Robust temporary directory usage
+          tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'to-userscript-download-'));
           const tempFilePath = path.join(tempDir, 'extension.zip');
           source = await DownloadService.download(parsed.url, tempFilePath);
         }
@@ -74,6 +81,7 @@ const parser = yargs(hideBin(process.argv))
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error(chalk.red.bold('\n❌ Conversion failed:'), msg);
+        // Error bubbles to the global handler for process termination
         throw error;
       } finally {
         if (tempDir) {
@@ -85,7 +93,12 @@ const parser = yargs(hideBin(process.argv))
   .command(
     'download <source>',
     'Download an extension archive',
-    (yargs) => yargs.positional('source', { type: 'string', demandOption: true }),
+    (yargs) => {
+      return yargs
+        .positional('source', { describe: 'Extension source (URL or ID)', type: 'string', demandOption: true })
+        .option('output', { alias: 'o', type: 'string', describe: 'Output path for the archive' })
+        .option('force', { alias: 'f', type: 'boolean', default: false, describe: 'Overwrite output if it exists' });
+    },
     async (argv) => {
       try {
         const source = argv.source as string;
@@ -96,7 +109,12 @@ const parser = yargs(hideBin(process.argv))
         }
 
         const url = parsed.url || source;
-        const dest = path.resolve(process.cwd(), 'extension.zip');
+        const dest = path.resolve(argv.output as string || 'extension.zip');
+
+        if (!argv.force && await fs.pathExists(dest)) {
+            throw new Error(`Output file already exists: ${dest}. Use --force to overwrite.`);
+        }
+
         await DownloadService.download(url, dest);
         console.log(chalk.green('Downloaded to:'), dest);
       } catch (error) {
@@ -138,6 +156,7 @@ async function run() {
     try {
         await parser.parseAsync();
     } catch (err) {
+        // Suppress redundant error logging here as commands handle their own logging
         process.exit(1);
     }
 }

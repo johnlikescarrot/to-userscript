@@ -17,9 +17,10 @@ describe('UnpackService', () => {
     vi.clearAllMocks();
   });
 
-  it('should reject potential path traversal attacks', async () => {
+  it('should reject potential path traversal attacks and stop extraction', async () => {
       const mockZip = new EventEmitter();
       (mockZip as any).readEntry = vi.fn();
+      (mockZip as any).openReadStream = vi.fn();
       vi.mocked(yauzl.open).mockImplementation((path: any, opts: any, cb: any) => {
           cb(null, mockZip);
       });
@@ -29,8 +30,11 @@ describe('UnpackService', () => {
       mockZip.emit('entry', { fileName: '../../etc/passwd' });
 
       await expect(unpackPromise).rejects.toThrow('Potential path traversal attack detected');
-      // readEntry is called once during initialization
+
+      // Verification: readEntry is only called once (initialization)
       expect(mockZip.readEntry).toHaveBeenCalledTimes(1);
+      // Verification: openReadStream is NEVER called for malicious entries
+      expect((mockZip as any).openReadStream).not.toHaveBeenCalled();
   });
 
   it('should advance ZIP loop driven by writeStream close events', async () => {
@@ -65,7 +69,7 @@ describe('UnpackService', () => {
       mockZip.emit('entry', { fileName: 'file.txt' });
       expect(fs.createWriteStream).toHaveBeenCalled();
 
-      // Advance by simulating stream completion
+      // Advance by simulating stream completion (drives the loop)
       mockWriteStream.emit('close');
       expect(readEntrySpy).toHaveBeenCalledTimes(3);
 
