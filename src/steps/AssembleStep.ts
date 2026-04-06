@@ -23,7 +23,7 @@ export class AssembleStep extends Step {
     const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
-    // Consolidated scriptId derivation
+    // Derive scriptId once for absolute consistency
     let scriptId = ManifestService.getInternalId(manifest);
     if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
         scriptId = (manifest.name || 'ext')
@@ -36,7 +36,7 @@ export class AssembleStep extends Step {
     const mainPolyfill = (await PolyfillService.build(target, assetMap, manifest.raw, scriptId)) || '';
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    // Build per-config execution logic for shared global scope parity
+    // Build per-config execution logic to support matches/exclude_matches fidelity
     const combinedExecutionLogic = `
 async function executeConfigScripts(config, globalThis, cssMap) {
     const {chrome, browser, window, self} = globalThis;
@@ -51,12 +51,14 @@ async function executeConfigScripts(config, globalThis, cssMap) {
                     style.textContent = css;
                     style.setAttribute('data-extension-path', cssPath);
                     (document.head || document.documentElement).appendChild(style);
-                } catch(e) { _error("CSS injection failed for " + cssPath, e); }
+                } catch(e) { _error("CSS injection failed for " + cssPath + ". Execution blocked by page CSP (style-src)?", e); }
             }
         }
     }
 
+    // Global hyphen replacement for robust runAt matching
     const runAt = (config.run_at || 'document_idle').replace(/_/g, '-');
+
     if (runAt === 'document-end') {
         if (document.readyState === 'loading') {
             await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
@@ -69,7 +71,7 @@ async function executeConfigScripts(config, globalThis, cssMap) {
         }
     }
 
-    // Industrial execution: concatenate bundled scripts to ensure library/app global communication
+    // Execute concatenated JS for this specific config to ensure shared scope parity
     const jsResources = ${JSON.stringify(resources.jsContents)};
     if (config.js && config.js.length > 0) {
         const combinedCode = config.js
@@ -81,13 +83,13 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             try {
                 // Execute entire bundle in a single isolated Function context
                 new Function('chrome', 'browser', 'window', 'self', combinedCode)(chrome, browser, window, self);
-            } catch(e) { _error("Execution error in bundled config scripts", e); }
+            } catch(e) { _error("Execution error in bundled config scripts. Execution blocked by page CSP (script-src without 'unsafe-eval')?", e); }
         }
     }
 }
 `;
 
-    const finalPayload = TemplateService.replace(orchestrationTemplate, {
+    const replacements = {
       '{{SCRIPT_ID}}': scriptId,
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
@@ -100,11 +102,14 @@ async function executeConfigScripts(config, globalThis, cssMap) {
       '{{USED_LOCALE}}': JSON.stringify(usedLocale),
       '{{EXTENSION_ASSETS_MAP}}': JSON.stringify(assetMap),
       '{{MIME_MAP}}': JSON.stringify(AssetService.MIME_MAP)
-    });
+    };
+
+    const finalPayload = TemplateService.replace(orchestrationTemplate, replacements);
 
     let header = '';
     if (target === 'userscript') {
         const sanitize = (s: any) => (s || '').toString().replace(/[\r\n]/g, ' ').trim();
+
         const metadata = [
             '// ==UserScript==',
             `// @name        ${sanitize(manifest.name)}`,
@@ -120,8 +125,8 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             '// @grant       Notification'
         ];
 
-        // usage-based grant detection (probe polyfill template before manifest injection)
-        const probePolyfill = (await PolyfillService.build(target, {}, { name: 'probe' } as any, 'probe-id')) || '';
+        // Advanced usage-based Grant detection from the pre-serialization probe (more accurate)
+        const probePolyfill = await PolyfillService.build(target, {}, { name: 'probe' } as any, 'probe-id');
         if (probePolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
         if (probePolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
 
@@ -130,8 +135,11 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             cs.matches?.forEach(m => matches.add(sanitize(m)));
         });
 
-        if (matches.size > 0) matches.forEach(m => metadata.push(`// @match       ${m}`));
-        else metadata.push('// @match       *://*/*');
+        if (matches.size > 0) {
+            matches.forEach(m => metadata.push(`// @match       ${m}`));
+        } else {
+            metadata.push('// @match       *://*/*');
+        }
 
         metadata.push('// ==/UserScript==');
         header = metadata.join('\n') + '\n';
@@ -166,6 +174,7 @@ ${header}
 })();
 `;
 
+    // Write final assembled output directly without a redundant global replace pass
     await fs.outputFile(outputFile, wrapper);
   }
 }

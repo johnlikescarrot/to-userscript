@@ -15,14 +15,15 @@ type SourceType = 'localPath' | 'chromeWebStoreListing' | 'directUrl' | 'unknown
 function parseExtensionSource(source: string): { type: SourceType; url?: string } {
   try {
     const url = new URL(source);
+    // Explicit hostname validation to prevent spoofing
     if (url.hostname === 'chromewebstore.google.com' ||
        (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
       return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
     }
     return { type: 'directUrl', url: source };
   } catch (e) {
-    // ID-based lookup or local path
-    if (source.length === 32 && /^[a-z]{32}$/.test(source)) {
+    // Alphanumeric 32-char ID check (case-insensitive)
+    if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
       return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
     }
     return { type: 'localPath' };
@@ -89,6 +90,11 @@ const parser = yargs(hideBin(process.argv))
       try {
         const source = argv.source as string;
         const parsed = parseExtensionSource(source);
+
+        if (parsed.type === 'localPath') {
+            throw new Error('Local paths are not supported by the download command. Please provide a URL or extension ID.');
+        }
+
         const url = parsed.url || source;
         const dest = path.resolve(process.cwd(), 'extension.zip');
         await DownloadService.download(url, dest);

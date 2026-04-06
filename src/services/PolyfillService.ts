@@ -15,6 +15,8 @@ export class PolyfillService {
     const abstraction = await TemplateService.load(`abstractionLayer.${target === 'userscript' ? 'userscript' : target === 'vanilla' ? 'vanilla' : 'postmessage'}`);
     const polyfillTemplate = await TemplateService.load('polyfill');
 
+    const internalId = scriptId;
+
     const decodingHelper = `
 function _base64ToUint8Array(base64) {
   const binary = atob(base64);
@@ -32,7 +34,7 @@ function _base64ToUint8Array(base64) {
       getURL: (path) => {
         if (!path) return "";
         let cleanPath = path.startsWith("/") ? path.substring(1) : path;
-        const assets = window.EXTENSION_ASSETS_MAPS["${scriptId}"] || {};
+        const assets = window.EXTENSION_ASSETS_MAPS["${internalId}"] || {};
         const data = assets[cleanPath];
         if (typeof data === "undefined") return path;
 
@@ -40,16 +42,17 @@ function _base64ToUint8Array(base64) {
         const ext = "." + (cleanPath.split(".").pop() || "").toLowerCase();
         const mimeType = mimeMap[ext] || "application/octet-stream";
 
-        const isText = ["html", "htm", "js", "css", "json", "svg"].some(t => cleanPath.endsWith(t));
+        // High-fidelity extension match matching orchestration template
+        const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
         const blob = isText ? new Blob([data], { type: mimeType }) : new Blob([_base64ToUint8Array(data)], { type: mimeType });
         return URL.createObjectURL(blob);
       }
     `;
 
-    // Order matters: replace polyfill internal placeholders before full template injection
+    // Replacement pass: replace getURL implementation and internal identifiers
     let polyfillBody = polyfillTemplate
       .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
-      .replace(/{{SCRIPT_ID}}/g, scriptId)
+      .replace(/{{SCRIPT_ID}}/g, internalId)
       .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
       .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest));
 
