@@ -13,16 +13,20 @@ import { DownloadService } from '../services/DownloadService.js';
 type SourceType = 'localPath' | 'chromeWebStoreListing' | 'directUrl' | 'unknown';
 
 function parseExtensionSource(source: string): { type: SourceType; url?: string } {
-  if (source.includes('chromewebstore.google.com') || source.includes('chrome.google.com/webstore')) {
-    return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
-  }
-  if (/^https?:\/\//.test(source)) {
+  try {
+    const url = new URL(source);
+    if (url.hostname === 'chromewebstore.google.com' ||
+       (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
+      return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
+    }
     return { type: 'directUrl', url: source };
+  } catch (e) {
+    // ID-based lookup or local path
+    if (source.length === 32 && /^[a-z]{32}$/.test(source)) {
+      return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
+    }
+    return { type: 'localPath' };
   }
-  if (source.length === 32 && /^[a-z]{32}$/.test(source)) {
-    return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
-  }
-  return { type: 'localPath' };
 }
 
 const parser = yargs(hideBin(process.argv))
@@ -47,14 +51,13 @@ const parser = yargs(hideBin(process.argv))
     async (argv) => {
       let source = argv.source as string;
       let tempDir: string | null = null;
-      let tempFilePath: string | null = null;
 
       try {
         const parsed = parseExtensionSource(source);
         if (parsed.url) {
           console.log(chalk.blue('Downloading extension...'));
           tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'to-userscript-'));
-          tempFilePath = path.join(tempDir, 'extension.zip');
+          const tempFilePath = path.join(tempDir, 'extension.zip');
           source = await DownloadService.download(parsed.url, tempFilePath);
         }
 

@@ -23,7 +23,7 @@ export class AssembleStep extends Step {
     const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
-    // Derived once and used everywhere for consistency
+    // Consolidated scriptId derivation
     let scriptId = ManifestService.getInternalId(manifest);
     if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
         scriptId = (manifest.name || 'ext')
@@ -36,11 +36,12 @@ export class AssembleStep extends Step {
     const mainPolyfill = (await PolyfillService.build(target, assetMap, manifest.raw, scriptId)) || '';
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    // Build per-config execution logic
+    // Build per-config execution logic for shared global scope parity
     const combinedExecutionLogic = `
 async function executeConfigScripts(config, globalThis, cssMap) {
     const {chrome, browser, window, self} = globalThis;
 
+    // Inject CSS for this specific config
     if (config.css) {
         for (const cssPath of config.css) {
             const css = cssMap[cssPath];
@@ -68,17 +69,19 @@ async function executeConfigScripts(config, globalThis, cssMap) {
         }
     }
 
+    // Industrial execution: concatenate bundled scripts to ensure library/app global communication
     const jsResources = ${JSON.stringify(resources.jsContents)};
     if (config.js && config.js.length > 0) {
         const combinedCode = config.js
             .map(path => jsResources[path])
             .filter(code => !!code)
-            .join('\n\n// --- End of script ---\n\n');
+            .join('\n\n// --- Config Script Boundary ---\n\n');
 
         if (combinedCode) {
             try {
+                // Execute entire bundle in a single isolated Function context
                 new Function('chrome', 'browser', 'window', 'self', combinedCode)(chrome, browser, window, self);
-            } catch(e) { _error("Execution error in combined scripts", e); }
+            } catch(e) { _error("Execution error in bundled config scripts", e); }
         }
     }
 }
@@ -117,10 +120,10 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             '// @grant       Notification'
         ];
 
-        // Advanced usage-based Grant detection
-        const allCode = mainPolyfill + finalPayload;
-        if (allCode.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
-        if (allCode.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
+        // usage-based grant detection (probe polyfill template before manifest injection)
+        const probePolyfill = (await PolyfillService.build(target, {}, { name: 'probe' } as any, 'probe-id')) || '';
+        if (probePolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
+        if (probePolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
 
         const matches = new Set<string>();
         (manifest.content_scripts || []).forEach(cs => {
@@ -147,6 +150,11 @@ ${header}
     const escapeRegex = ${RegexUtils.escapeRegex.toString()};
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
+
+    // --- Scoped Assets
+    if (typeof window.EXTENSION_ASSETS_MAPS !== "object" || window.EXTENSION_ASSETS_MAPS === null) {
+        window.EXTENSION_ASSETS_MAPS = {};
+    }
 
     // --- Polyfill & Logic
     ${mainPolyfill}

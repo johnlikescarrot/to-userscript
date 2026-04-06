@@ -3,9 +3,6 @@ import { PolyfillService } from '../PolyfillService.js';
 import { TemplateService } from '../TemplateService.js';
 
 vi.mock('../TemplateService.js');
-vi.mock('../ManifestService.js', () => ({
-    ManifestService: { getInternalId: () => 'test-id' }
-}));
 
 describe('PolyfillService', () => {
   it('should build the polyfill string', async () => {
