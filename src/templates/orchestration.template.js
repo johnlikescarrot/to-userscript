@@ -1,13 +1,19 @@
 const INJECTED_MANIFEST = {{INJECTED_MANIFEST}};
-const CONTENT_SCRIPT_CONFIGS_FOR_MATCHING = {{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}};
+const CONTENT_SCRIPT_CONFIGS = {{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}};
 const OPTIONS_PAGE_PATH = {{OPTIONS_PAGE_PATH}};
 const POPUP_PAGE_PATH = {{POPUP_PAGE_PATH}};
 const EXTENSION_ICON = {{EXTENSION_ICON}};
-const extensionCssData = {{EXTENSION_CSS_DATA}};
+const EXTENSION_CSS_MAP = {{EXTENSION_CSS_DATA}};
 
 const LOCALE_KEYS = {{LOCALE}};
 const USED_LOCALE = {{USED_LOCALE}};
 const CURRENT_LOCATION = window.location.href;
+
+// Scoped asset map to prevent cross-script collisions
+if (typeof window.EXTENSION_ASSETS_MAPS !== "object" || window.EXTENSION_ASSETS_MAPS === null) {
+    window.EXTENSION_ASSETS_MAPS = {};
+}
+window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] = {{EXTENSION_ASSETS_MAP}};
 
 function _base64ToBlob(base64, mimeType = "application/octet-stream") {
   const binary = atob(base64);
@@ -19,15 +25,18 @@ function _base64ToBlob(base64, mimeType = "application/octet-stream") {
 
 function _createAssetUrl(path = "") {
   if (path.startsWith("/")) path = path.slice(1);
-  const assetData = EXTENSION_ASSETS_MAP[path];
+  const assets = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
+  const assetData = assets[path];
   if (typeof assetData === "undefined") return path;
 
-  const ext = (path.split(".").pop() || "").toLowerCase();
-  const isText = ["html", "htm", "js", "css", "json", "svg"].includes(ext);
-  const mime = "application/octet-stream"; // Simplified helper
+  const ext = "." + (path.split(".").pop() || "").toLowerCase();
+  const mimeMap = {{MIME_MAP}};
+  const mimeType = mimeMap[ext] || "application/octet-stream";
 
-  if (isText) return URL.createObjectURL(new Blob([assetData], { type: "text/plain" }));
-  return URL.createObjectURL(_base64ToBlob(assetData, mime));
+  const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
+
+  if (isText) return URL.createObjectURL(new Blob([assetData], { type: mimeType }));
+  return URL.createObjectURL(_base64ToBlob(assetData, mimeType));
 }
 
 {{COMBINED_EXECUTION_LOGIC}}
@@ -38,19 +47,16 @@ async function main() {
   if (typeof _initStorage === "function") await _initStorage();
 
   const currentUrl = window.location.href;
-  let matched = false;
+  const polyfill = buildPolyfill();
+  window.chrome = polyfill;
+  window.browser = polyfill;
 
-  for (const config of CONTENT_SCRIPT_CONFIGS_FOR_MATCHING) {
-    if (config.matches && config.matches.some(p => currentUrl.includes(p))) { // Simplified matching
-      matched = true;
-      break;
+  for (const config of (CONTENT_SCRIPT_CONFIGS || [])) {
+    const matches = (config.matches || []).some(p => convertMatchPatternToRegExp(p).test(currentUrl));
+    const excluded = (config.exclude_matches || []).some(p => convertMatchPatternToRegExp(p).test(currentUrl));
+
+    if (matches && !excluded) {
+      await executeConfigScripts(config, polyfill, EXTENSION_CSS_MAP);
     }
-  }
-
-  if (matched) {
-    const polyfill = buildPolyfill();
-    window.chrome = polyfill;
-    window.browser = polyfill;
-    await executeAllScripts(polyfill, extensionCssData);
   }
 }
