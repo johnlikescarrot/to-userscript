@@ -62,15 +62,16 @@ const MIMES = {{MIME_MAP}};
     expect(result.success).toBe(true);
     expect(result.extension.name).toBe('Industrial Test');
 
-    // Robust, order-independent output detection
+    // Robust, order-independent output detection with existence assertion
     const outputCall = vi.mocked(fs.outputFile).mock.calls.find(c => c[0].endsWith('industrial.user.js'));
-    const output = outputCall?.[1] as string;
+    expect(outputCall).toBeDefined();
+    const output = outputCall![1] as string;
 
     expect(output).toContain('// ==UserScript==');
     expect(output).toContain('// @name        Industrial Test');
     expect(output).toContain('// @version     1.2.3');
     expect(output).toContain('// @match       *://test.com/*');
-    // Verify that the REAL bootstrap logic was injected (since fixture no longer contains this literal)
+    // Verify that the REAL bootstrap logic was injected
     expect(output).toContain('window.EXTENSION_ASSETS_MAPS');
     expect(output).toContain('Industrial Test');
 
@@ -88,7 +89,7 @@ const MIMES = {{MIME_MAP}};
         target: 'userscript'
     });
 
-    // Assert explicit success despite cleanup failure
+    // Explicitly assert success despite cleanup failure
     expect(result).toMatchObject({ success: true });
   });
 

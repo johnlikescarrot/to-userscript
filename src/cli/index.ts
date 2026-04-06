@@ -13,11 +13,19 @@ import { DownloadService } from '../services/DownloadService.js';
 type SourceType = 'localPath' | 'chromeWebStoreListing' | 'directUrl' | 'unknown';
 
 function parseExtensionSource(source: string): { type: SourceType; url?: string } {
+  // Path detection: starts with dot, slash, contains separators, or matches Windows drive letters
+  const isPathLike = source.startsWith('.') ||
+                     source.startsWith('/') ||
+                     source.includes('/') ||
+                     source.includes('\\') ||
+                     /^[a-zA-Z]:[\\/]/.test(source);
+
   try {
     const url = new URL(source);
     // If it's a valid URL but not http/https, we don't support it for download
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        return { type: 'unknown' };
+        // If it looks like a path (e.g. C:/...), treat it as localPath
+        return isPathLike ? { type: 'localPath' } : { type: 'unknown' };
     }
 
     // Explicit hostname validation to prevent spoofing
@@ -35,13 +43,6 @@ function parseExtensionSource(source: string): { type: SourceType; url?: string 
   if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
     return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
   }
-
-  // Path detection: starts with dot, slash, contains separators, or matches Windows drive letters
-  const isPathLike = source.startsWith('.') ||
-                     source.startsWith('/') ||
-                     source.includes('/') ||
-                     source.includes('\\') ||
-                     /^[a-zA-Z]:\\/.test(source);
 
   if (isPathLike) {
       return { type: 'localPath' };
