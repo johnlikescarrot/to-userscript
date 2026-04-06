@@ -58,12 +58,43 @@ function buildPolyfill({ isBackground = false } = {}) {
       }
     },
     scripting: {
+      _registeredScripts: [],
+      registerContentScripts: async (scripts) => {
+          scripts.forEach(s => {
+              polyfill.scripting._registeredScripts = polyfill.scripting._registeredScripts.filter(rs => rs.id !== s.id);
+              polyfill.scripting._registeredScripts.push(s);
+          });
+          return Promise.resolve();
+      },
+      getRegisteredContentScripts: async (filter) => {
+          let scripts = polyfill.scripting._registeredScripts;
+          if (filter && filter.ids) {
+              scripts = scripts.filter(s => filter.ids.includes(s.id));
+          }
+          return Promise.resolve(scripts);
+      },
+      unregisterContentScripts: async (filter) => {
+          if (!filter || !filter.ids) {
+              polyfill.scripting._registeredScripts = [];
+          } else {
+              polyfill.scripting._registeredScripts = polyfill.scripting._registeredScripts.filter(s => !filter.ids.includes(s.id));
+          }
+          return Promise.resolve();
+      },
+      updateContentScripts: async (scripts) => {
+          scripts.forEach(s => {
+              const idx = polyfill.scripting._registeredScripts.findIndex(rs => rs.id === s.id);
+              if (idx !== -1) {
+                  polyfill.scripting._registeredScripts[idx] = { ...polyfill.scripting._registeredScripts[idx], ...s };
+              }
+          });
+          return Promise.resolve();
+      },
       executeScript: async ({ target, func, files, args } = {}) => {
           if (func) {
               try {
                   const isolatedFunc = new Function('args', `return (${func.toString()})(...args)`);
                   const res = isolatedFunc(args || []);
-                  // Ensure async functions are properly awaited before returning result
                   return [{ result: await res, frameId: 0 }];
               } catch (err) {
                   return Promise.reject(err);
@@ -113,7 +144,6 @@ function buildPolyfill({ isBackground = false } = {}) {
           if (files) {
               for (const file of files) {
                   const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                  // Efficient removal with direct attribute selector
                   const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(cleanPath)}"]`);
                   for (const s of styles) s.remove();
               }
@@ -121,6 +151,7 @@ function buildPolyfill({ isBackground = false } = {}) {
       }
     },
     declarativeNetRequest: {
+      _enabledRulesets: [],
       updateDynamicRules: ({ addRules = [], removeRuleIds = [] } = {}) => {
         _dynamicRules = _dynamicRules.filter(r => !removeRuleIds.includes(r.id));
         addRules.forEach(r => {
@@ -138,11 +169,18 @@ function buildPolyfill({ isBackground = false } = {}) {
         }
         return Promise.resolve();
       },
-      getDynamicRules: () => Promise.resolve([..._dynamicRules])
-    },
-    sidePanel: {
-        setOptions: () => Promise.resolve(),
-        open: () => { _warn("sidePanel.open is not supported in userscripts."); return Promise.resolve(); }
+      getDynamicRules: () => Promise.resolve([..._dynamicRules]),
+      getEnabledRulesets: () => Promise.resolve([...polyfill.declarativeNetRequest._enabledRulesets]),
+      updateEnabledRulesets: ({ enableRulesetIds = [], disableRulesetIds = [] } = {}) => {
+          polyfill.declarativeNetRequest._enabledRulesets = polyfill.declarativeNetRequest._enabledRulesets
+              .filter(id => !disableRulesetIds.includes(id))
+              .concat(enableRulesetIds.filter(id => !polyfill.declarativeNetRequest._enabledRulesets.includes(id)));
+          return Promise.resolve();
+      },
+      getAvailableStaticRuleCount: () => Promise.resolve(30000),
+      getDisabledRuleIds: (options) => Promise.resolve([]),
+      getSessionRules: () => Promise.resolve([]),
+      updateSessionRules: (options) => Promise.resolve(),
     },
     tabs: {
       create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
@@ -177,6 +215,27 @@ function buildPolyfill({ isBackground = false } = {}) {
       contains: () => Promise.resolve(true),
       request: () => Promise.resolve(true)
     },
+    aiOriginTrial: {
+      languageModel: {
+        capabilities: async () => {
+          if (typeof window.ai !== "undefined" && window.ai.languageModel) return window.ai.languageModel.capabilities();
+          if (typeof chrome !== "undefined" && chrome.aiOriginTrial && chrome.aiOriginTrial.languageModel) return chrome.aiOriginTrial.languageModel.capabilities();
+          return Promise.reject(new Error("AI LanguageModel not supported in this environment."));
+        },
+        create: async (options) => {
+          if (typeof window.ai !== "undefined" && window.ai.languageModel) return window.ai.languageModel.create(options);
+          if (typeof chrome !== "undefined" && chrome.aiOriginTrial && chrome.aiOriginTrial.languageModel) return chrome.aiOriginTrial.languageModel.create(options);
+          return Promise.reject(new Error("AI LanguageModel not supported in this environment."));
+        },
+        params: async () => {
+          if (typeof window.ai !== "undefined" && window.ai.languageModel) return window.ai.languageModel.params();
+          if (typeof chrome !== "undefined" && chrome.aiOriginTrial && chrome.aiOriginTrial.languageModel) return chrome.aiOriginTrial.languageModel.params();
+          return Promise.reject(new Error("AI LanguageModel not supported in this environment."));
+        }
+      }
+    },
+    ai: (typeof window.ai !== "undefined") ? window.ai : {},
+
     contextMenus: {
       create: (props) => { _registerMenuCommand(props.title, props.onclick); return props.id || 1; },
       removeAll: () => {}

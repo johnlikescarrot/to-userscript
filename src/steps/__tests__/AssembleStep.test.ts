@@ -13,7 +13,7 @@ vi.mock('../../services/TemplateService.js', () => ({
     replace: vi.fn().mockImplementation((content, replacements) => {
         let res = content;
         for (const [k, v] of Object.entries(replacements)) {
-            res = res.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), v);
+            res = res.replace(new RegExp(k.replace(/[.*+?^$${}()|[\]\\]/g, '\\$&'), 'g'), v);
         }
         return res;
     })
@@ -53,6 +53,7 @@ describe('AssembleStep: Industrial Robustness', () => {
         jsContents: { 'content.js': 'GM_webRequest({ selector: "*" });' },
         cssContents: {}
     });
+    ctx.set('backgroundJs', {});
     ctx.set('assetMap', {});
 
     const step = new AssembleStep();
@@ -83,6 +84,7 @@ describe('AssembleStep: Industrial Robustness', () => {
           action: {} // Ensure action is defined
       });
       ctx.set('resources', { jsContents: {}, cssContents: {} });
+      ctx.set('backgroundJs', {});
       ctx.set('assetMap', {});
 
       const step = new AssembleStep();

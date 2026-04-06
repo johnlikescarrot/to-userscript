@@ -127,12 +127,25 @@ async function executeConfigScripts(config, globalThis, cssMap) {
         ];
 
         // Advanced usage-based Grant detection by scanning assembled resource contents
-        const allJsContent = Object.values(resources.jsContents).join('\n');
-        if (allJsContent.includes('GM_webRequest') || allJsContent.includes('GM.webRequest')) {
-            metadata.push('// @grant       GM_webRequest');
-        }
-        if (allJsContent.includes('GM_cookie') || allJsContent.includes('GM.cookie')) {
-            metadata.push('// @grant       GM_cookie');
+        const allJsContent = Object.values(resources.jsContents).join('\n') +
+                             Object.values(context.get<ScriptContents>('backgroundJs')).join('\n');
+
+        const grantMap: Record<string, string[]> = {
+            'GM_webRequest': ['GM_webRequest', 'GM.webRequest'],
+            'GM_cookie': ['GM_cookie', 'GM.cookie'],
+            'GM_download': ['GM_download', 'GM.download'],
+            'GM_notification': ['GM_notification', 'GM.notification'],
+            'GM_setClipboard': ['GM_setClipboard', 'GM.setClipboard'],
+            'GM_addStyle': ['GM_addStyle', 'GM.addStyle'],
+            'GM_getResourceText': ['GM_getResourceText', 'GM.getResourceText'],
+            'GM_getResourceURL': ['GM_getResourceURL', 'GM.getResourceURL'],
+            'GM_info': ['GM_info', 'GM.info']
+        };
+
+        for (const [grant, patterns] of Object.entries(grantMap)) {
+            if (patterns.some(p => allJsContent.includes(p))) {
+                metadata.push(`// @grant       ${grant}`);
+            }
         }
 
         const matches = new Set<string>();
