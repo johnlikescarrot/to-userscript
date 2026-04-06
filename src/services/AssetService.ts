@@ -3,6 +3,7 @@ import path from 'path';
 import { AssetMap } from '../core/types.js';
 import { Manifest } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
+import { matchGlobPattern } from "../utils/RegexUtils.js";
 
 export class AssetService {
   public static readonly MIME_MAP: Record<string, string> = {
@@ -81,10 +82,29 @@ export class AssetService {
     }
 
     for (const f of initialFiles) await processFile(f);
+
+    const allFiles: string[] = [];
+    const scanAll = async (dir: string) => {
+      const full = path.join(extensionRoot, dir);
+      if (!(await fs.pathExists(full))) return;
+      const entries = await fs.readdir(full);
+      for (const entry of entries) {
+        const rel = path.join(dir, entry);
+        const entryFull = path.join(extensionRoot, rel);
+        const stat = await fs.stat(entryFull);
+        if (stat.isDirectory()) await scanAll(rel);
+        else allFiles.push(normalizePath(rel));
+      }
+    };
+    await scanAll("");
+
     if (manifest.web_accessible_resources) {
       for (const res of manifest.web_accessible_resources) {
-        if (typeof res === 'string') await processFile(res);
-        else for (const rp of res.resources) await processFile(rp);
+        const patterns = typeof res === "string" ? [res] : res.resources;
+        for (const pattern of patterns) {
+          const matched = allFiles.filter(f => matchGlobPattern(pattern, f));
+          for (const m of matched) await processFile(m);
+        }
       }
     }
 

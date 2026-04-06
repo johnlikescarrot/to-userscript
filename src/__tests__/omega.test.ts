@@ -18,6 +18,7 @@ describe('Industrial Transformation: Elite Verification Suite', () => {
     // Default mock behavior for fs
     vi.mocked(fs.pathExists).mockResolvedValue(true);
     vi.mocked(fs.stat).mockResolvedValue({ isFile: () => false } as any);
+    vi.mocked(fs.readdir).mockResolvedValue([]);
     vi.mocked(fs.readFile).mockImplementation(async (path: any) => {
         const p = path.toString();
         if (p.endsWith('manifest.json')) {

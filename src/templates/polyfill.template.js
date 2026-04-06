@@ -17,6 +17,58 @@ function buildPolyfill({ isBackground = false } = {}) {
 
   // Stateful DNR rule management
   let _dynamicRules = [];
+  const _staticRulesMap = {{STATIC_DNR_RULES}};
+  let _enabledRulesetIds = ({{STATIC_DNR_CONFIGS}}).filter(c => c.enabled).map(c => c.id);
+  let _registeredScripts = [];
+
+  const _evaluateDnrRule = (rule, url, resourceType, initiator) => {
+    const { condition } = rule;
+    if (!condition) return false;
+
+    if (condition.urlFilter) {
+      const regex = convertMatchPatternToRegExp(condition.urlFilter);
+      if (!regex.test(url)) return false;
+    } else if (condition.regexFilter) {
+      const regex = new RegExp(condition.regexFilter, condition.isUrlFilterCaseSensitive === false ? 'i' : '');
+      if (!regex.test(url)) return false;
+    }
+
+    if (condition.resourceTypes && condition.resourceTypes.length > 0) {
+      if (!condition.resourceTypes.includes(resourceType)) return false;
+    }
+    if (condition.excludedResourceTypes && condition.excludedResourceTypes.length > 0) {
+      if (condition.excludedResourceTypes.includes(resourceType)) return false;
+    }
+
+    if (initiator) {
+      try {
+        const initiatorUrl = new URL(initiator);
+        const domain = initiatorUrl.hostname;
+        if (condition.initiatorDomains && condition.initiatorDomains.length > 0) {
+          if (!condition.initiatorDomains.some(d => domain === d || domain.endsWith('.' + d))) return false;
+        }
+        if (condition.excludedInitiatorDomains && condition.excludedInitiatorDomains.length > 0) {
+          if (condition.excludedInitiatorDomains.some(d => domain === d || domain.endsWith('.' + d))) return false;
+        }
+      } catch (e) {}
+    }
+
+    return true;
+  };
+
+  const _applyDnrRules = (url, resourceType, initiator) => {
+    let allRules = [..._dynamicRules];
+    _enabledRulesetIds.forEach(id => {
+      if (_staticRulesMap[id]) allRules = allRules.concat(_staticRulesMap[id]);
+    });
+
+    const sortedRules = allRules.sort((a, b) => (b.priority || 1) - (a.priority || 1));
+
+    for (const rule of sortedRules) {
+      if (_evaluateDnrRule(rule, url, resourceType, initiator)) return rule.action;
+    }
+    return null;
+  };
 
   const polyfill = {
     runtime: {
@@ -59,90 +111,127 @@ function buildPolyfill({ isBackground = false } = {}) {
     },
     scripting: {
       executeScript: async ({ target, func, files, args } = {}) => {
-          if (func) {
+        if (func) {
+          try {
+            const isolatedFunc = new Function('args', `return (${func.toString()})(...args)`);
+            const res = isolatedFunc(args || []);
+            return [{ result: await res, frameId: 0 }];
+          } catch (err) { return Promise.reject(err); }
+        }
+        if (files) {
+          const results = [];
+          for (const file of files) {
+            const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+            const content = assetsMap[cleanPath];
+            if (content) {
               try {
-                  const isolatedFunc = new Function('args', `return (${func.toString()})(...args)`);
-                  const res = isolatedFunc(args || []);
-                  // Ensure async functions are properly awaited before returning result
-                  return [{ result: await res, frameId: 0 }];
-              } catch (err) {
-                  return Promise.reject(err);
-              }
+                const res = new Function(content)();
+                results.push({ result: await res, frameId: 0 });
+              } catch (e) { _error("executeScript file error:", e); }
+            }
           }
-          if (files) {
-              const results = [];
-              for (const file of files) {
-                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                  const content = assetsMap[cleanPath];
-                  if (content) {
-                      try {
-                          const res = new Function(content)();
-                          results.push({ result: await res, frameId: 0 });
-                      } catch (e) { _error("executeScript file error:", e); }
-                  }
-              }
-              return results;
-          }
-          return [];
+          return results;
+        }
+        return [];
       },
       insertCSS: async ({ target, css, files } = {}) => {
-          if (css) {
+        if (css) {
+          const style = document.createElement('style');
+          style.textContent = css;
+          style.setAttribute('data-scripting-css', 'true');
+          (document.head || document.documentElement).appendChild(style);
+        }
+        if (files) {
+          for (const file of files) {
+            const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+            const content = assetsMap[cleanPath];
+            if (content) {
               const style = document.createElement('style');
-              style.textContent = css;
-              style.setAttribute('data-scripting-css', 'true');
+              style.textContent = content;
+              style.setAttribute('data-scripting-file', cleanPath);
               (document.head || document.documentElement).appendChild(style);
+            }
           }
-          if (files) {
-              for (const file of files) {
-                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                  const content = assetsMap[cleanPath];
-                  if (content) {
-                      const style = document.createElement('style');
-                      style.textContent = content;
-                      style.setAttribute('data-scripting-file', cleanPath);
-                      (document.head || document.documentElement).appendChild(style);
-                  }
-              }
-          }
+        }
       },
       removeCSS: async ({ css, files } = {}) => {
-          if (css) {
-              const styles = document.querySelectorAll('style[data-scripting-css]');
-              for (const s of styles) if (s.textContent === css) s.remove();
+        if (css) {
+          const styles = document.querySelectorAll('style[data-scripting-css]');
+          for (const s of styles) if (s.textContent === css) s.remove();
+        }
+        if (files) {
+          for (const file of files) {
+            const cleanPath = file.startsWith("/") ? file.slice(1) : file;
+            const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(cleanPath)}"]`);
+            for (const s of styles) s.remove();
           }
-          if (files) {
-              for (const file of files) {
-                  const cleanPath = file.startsWith("/") ? file.slice(1) : file;
-                  // Efficient removal with direct attribute selector
-                  const styles = document.querySelectorAll(`style[data-scripting-file="${CSS.escape(cleanPath)}"]`);
-                  for (const s of styles) s.remove();
-              }
-          }
+        }
+      },
+      registerContentScripts: async (scripts) => {
+        scripts.forEach(s => {
+          _registeredScripts = _registeredScripts.filter(rs => rs.id !== s.id);
+          _registeredScripts.push(s);
+        });
+        return Promise.resolve();
+      },
+      getRegisteredContentScripts: async (filter) => {
+        let scripts = [..._registeredScripts];
+        if (filter && filter.ids) scripts = scripts.filter(s => filter.ids.includes(s.id));
+        return Promise.resolve(scripts);
+      },
+      unregisterContentScripts: async (filter) => {
+        if (!filter || !filter.ids) _registeredScripts = [];
+        else _registeredScripts = _registeredScripts.filter(s => !filter.ids.includes(s.id));
+        return Promise.resolve();
+      },
+      updateContentScripts: async (scripts) => {
+        scripts.forEach(s => {
+          const existing = _registeredScripts.find(rs => rs.id === s.id);
+          if (existing) Object.assign(existing, s);
+        });
+        return Promise.resolve();
       }
     },
     declarativeNetRequest: {
-      updateDynamicRules: ({ addRules = [], removeRuleIds = [] } = {}) => {
+      updateDynamicRules: async ({ addRules = [], removeRuleIds = [] } = {}) => {
         _dynamicRules = _dynamicRules.filter(r => !removeRuleIds.includes(r.id));
         addRules.forEach(r => {
-            _dynamicRules = _dynamicRules.filter(dr => dr.id !== r.id);
-            _dynamicRules.push({ ...r });
+          _dynamicRules = _dynamicRules.filter(dr => dr.id !== r.id);
+          _dynamicRules.push({ ...r });
         });
-
-        const mappedRules = _dynamicRules.map(r => ({
+        if (typeof GM_webRequest === "function") {
+          const mappedRules = _dynamicRules.map(r => ({
             selector: r.condition?.urlFilter || "*",
             action: r.action?.type === "block" ? "cancel" : "ok"
-        }));
-
-        if (typeof GM_webRequest === "function") {
-            try { GM_webRequest(mappedRules, () => {}); } catch(e) { _warn("DNR/GM_webRequest error:", e); }
+          }));
+          try { GM_webRequest(mappedRules, () => {}); } catch(e) { _warn("GM_webRequest error:", e); }
         }
         return Promise.resolve();
       },
-      getDynamicRules: () => Promise.resolve([..._dynamicRules])
+      getDynamicRules: () => Promise.resolve([..._dynamicRules]),
+      getEnabledRulesets: () => Promise.resolve([..._enabledRulesetIds]),
+      updateEnabledRulesets: async ({ enableRulesetIds = [], disableRulesetIds = [] } = {}) => {
+        _enabledRulesetIds = _enabledRulesetIds.filter(id => !disableRulesetIds.includes(id));
+        enableRulesetIds.forEach(id => {
+          if (!_enabledRulesetIds.includes(id)) _enabledRulesetIds.push(id);
+        });
+        return Promise.resolve();
+      },
+      getMatchedRules: () => Promise.resolve({ rulesMatchedInfo: [] }),
+      setExtensionActionOptions: () => Promise.resolve(),
     },
     sidePanel: {
-        setOptions: () => Promise.resolve(),
-        open: () => { _warn("sidePanel.open is not supported in userscripts."); return Promise.resolve(); }
+      setOptions: (options) => {
+        BUS.emit('__SIDEPANEL_SET_OPTIONS__', options);
+        return Promise.resolve();
+      },
+      open: (options = {}) => {
+        BUS.emit('__SIDEPANEL_OPEN__', options);
+        return Promise.resolve();
+      },
+      getOptions: () => Promise.resolve({ enabled: true, path: "" }),
+      getPanelBehavior: () => Promise.resolve({ openPanelOnActionClick: false }),
+      setPanelBehavior: () => Promise.resolve()
     },
     tabs: {
       create: (props) => { _openTab(props.url, props.active !== false); return Promise.resolve({ id: 1 }); },
