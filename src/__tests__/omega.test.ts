@@ -3,6 +3,7 @@ import { convertExtension } from '../index.js';
 import fs from 'fs-extra';
 import { UnpackService } from '../services/UnpackService.js';
 import { ManifestService } from '../services/ManifestService.js';
+import { DownloadService } from '../services/DownloadService.js';
 import * as RegexUtils from '../utils/RegexUtils.js';
 import yauzl from 'yauzl';
 import { EventEmitter } from 'events';
@@ -10,6 +11,7 @@ import { EventEmitter } from 'events';
 vi.mock('fs-extra');
 vi.mock('node-fetch');
 vi.mock('yauzl');
+vi.mock('../services/DownloadService.js');
 
 describe('Industrial Transformation: Elite Verification Suite', () => {
   beforeEach(() => {

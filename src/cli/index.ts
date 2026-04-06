@@ -46,6 +46,7 @@ function parseExtensionSource(source: string): { type: SourceType; url?: string 
 const parser = yargs(hideBin(process.argv))
   .scriptName('to-userscript')
   .usage('$0 <command> [options]')
+  .strict()
   .command(
     'convert <source>',
     'Convert an extension to a userscript',
@@ -60,14 +61,18 @@ const parser = yargs(hideBin(process.argv))
         .option('target', { alias: 't', choices: ['userscript', 'vanilla'] as const, default: 'userscript' as const, describe: 'Conversion target' })
         .option('minify', { type: 'boolean', default: false, describe: 'Minify the output' })
         .option('beautify', { type: 'boolean', default: false, describe: 'Beautify the output' })
-        .option('force', { alias: 'f', type: 'boolean', default: false, describe: 'Overwrite output if it exists' });
+        .option('force', { alias: 'f', type: 'boolean', default: false, describe: 'Overwrite output if it exists' })
+        .strict();
     },
     async (argv) => {
       let source = argv.source as string;
       let tempDir: string | null = null;
 
       try {
-        const parsed = parseExtensionSource(source);
+        // P1: Local path precedence. If the source exists locally, treat as localPath and skip download branch.
+        const isLocal = await fs.pathExists(path.resolve(source));
+        const parsed = isLocal ? { type: 'localPath' as const } : parseExtensionSource(source);
+
         if (parsed.url) {
           console.log(chalk.blue('Downloading extension...'));
           // Robust temporary directory usage
@@ -104,7 +109,8 @@ const parser = yargs(hideBin(process.argv))
       return yargs
         .positional('source', { describe: 'Extension source (URL or ID)', type: 'string', demandOption: true })
         .option('output', { alias: 'o', type: 'string', describe: 'Output path for the archive' })
-        .option('force', { alias: 'f', type: 'boolean', default: false, describe: 'Overwrite output if it exists' });
+        .option('force', { alias: 'f', type: 'boolean', default: false, describe: 'Overwrite output if it exists' })
+        .strict();
     },
     async (argv) => {
       try {
@@ -134,7 +140,7 @@ const parser = yargs(hideBin(process.argv))
   .command(
     'require <userscript>',
     'Generate a metadata block with @require',
-    (yargs) => yargs.positional('userscript', { type: 'string', demandOption: true }),
+    (yargs) => yargs.positional('userscript', { type: 'string', demandOption: true }).strict(),
     async (argv) => {
       try {
         const filePath = path.resolve(argv.userscript as string);
