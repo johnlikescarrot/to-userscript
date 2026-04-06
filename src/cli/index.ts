@@ -51,8 +51,9 @@ const parser = yargs(hideBin(process.argv))
         });
         console.log(chalk.green.bold('\n✨ Conversion successful!'));
       } catch (error) {
-        console.error(chalk.red.bold('\n❌ Conversion failed:'), (error as Error).message);
-        throw error;
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red.bold('\n❌ Conversion failed:'), msg);
+        throw error; // Rethrow to ensure absolute cleanup guard works and return code is set
       } finally {
         if (tempDownloadPath) {
           await fs.remove(tempDownloadPath).catch(() => {});
@@ -72,8 +73,9 @@ const parser = yargs(hideBin(process.argv))
         await DownloadService.download(url, dest);
         console.log(chalk.green('Downloaded to:'), dest);
       } catch (error) {
-        console.error(chalk.red.bold('\n❌ Download failed:'), (error as Error).message);
-        throw error;
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red.bold('\n❌ Download failed:'), msg);
+        process.exit(1);
       }
     }
   )
@@ -93,8 +95,9 @@ const parser = yargs(hideBin(process.argv))
         console.log(`// @require     ${fileUrl}`);
         console.log('// ==/UserScript==');
       } catch (error) {
-        console.error(chalk.red.bold('\n❌ Error:'), (error as Error).message);
-        throw error;
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red.bold('\n❌ Error:'), msg);
+        process.exit(1);
       }
     }
   )

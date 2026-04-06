@@ -27,12 +27,12 @@ export class AssembleStep extends Step {
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
     let scriptId = ManifestService.getInternalId(manifest);
-    // Industrial-grade scriptId validation and fallback
+    // Industrial-grade scriptId validation and fallback with hyphen collapse
     if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
         scriptId = (manifest.name || 'ext')
             .replace(/[^a-z0-9]+/gi, '-')
-            .replace(/-+$/, '')
-            .replace(/^-+/, '')
+            .replace(/-+/g, '-')
+            .replace(/^-+|-+$/g, '')
             .toLowerCase() || 'extension-' + Date.now();
     }
 
@@ -56,7 +56,8 @@ async function executeConfigScripts(config, globalThis, cssMap) {
         }
     }
 
-    const runAt = (config.run_at || 'document_idle').replace('_', '-');
+    // Global hyphen replacement for robust runAt matching
+    const runAt = (config.run_at || 'document_idle').replace(/_/g, '-');
 
     if (runAt === 'document-end') {
         if (document.readyState === 'loading') {
@@ -107,7 +108,6 @@ async function executeConfigScripts(config, globalThis, cssMap) {
 
     let header = '';
     if (target === 'userscript') {
-        // Metadata sanitization to prevent injection
         const sanitize = (s: any) => (s || '').toString().replace(/[\r\n]/g, ' ').trim();
 
         const metadata = [
@@ -125,9 +125,10 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             '// @grant       Notification'
         ];
 
-        // Heuristic grant detection
-        if (mainPolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
-        if (mainPolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
+        // Safe Grant detection: consult polyfill template before manifest injection to avoid false positives
+        const basePolyfill = (await PolyfillService.build(target, {}, { name: 'grants-probe' } as any)) || '';
+        if (basePolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
+        if (basePolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
 
         const matches = new Set<string>();
         (manifest.content_scripts || []).forEach(cs => {
