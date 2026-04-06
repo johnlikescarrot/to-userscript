@@ -18,9 +18,10 @@ export class TemplateService {
     return fs.readFile(filePath, 'utf-8');
   }
 
-  static replace(content: string, replacements: Record<string, string>): string {
+  static replace(content: string, replacements: Record<string, any>): string {
     let result = content;
-    for (const [key, value] of Object.entries(replacements)) {
+    for (const [key, rawValue] of Object.entries(replacements)) {
+      const value = rawValue === null || rawValue === undefined ? "" : String(rawValue);
       const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
       const regex = new RegExp(escapedKey, 'g');
       const safeValue = value.replace(/\$/g, '$$$$');

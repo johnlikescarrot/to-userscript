@@ -5,7 +5,7 @@ import { Manifest } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
 
 export class AssetService {
-  private static MIME_MAP: Record<string, string> = {
+  public static readonly MIME_MAP: Record<string, string> = {
     '.html': 'text/html', '.htm': 'text/html', '.js': 'text/javascript',
     '.css': 'text/css', '.json': 'application/json', '.png': 'image/png',
     '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -27,9 +27,8 @@ export class AssetService {
     const processedFiles = new Set<string>();
 
     const processFile = async (relPath: string) => {
-      // P2: Strip query/hash fragments
       const cleanRelPath = relPath.split(/[?#]/)[0];
-      if (!cleanRelPath) return; // Prevent empty path from query-only refs
+      if (!cleanRelPath) return;
 
       const normalized = normalizePath(cleanRelPath);
       if (processedFiles.has(normalized)) return;
@@ -71,7 +70,6 @@ export class AssetService {
     };
 
     const initialFiles = new Set<string>();
-    // High-fidelity asset discovery
     if (manifest.manifest_version === 2) {
       if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
       if (manifest.options_page) initialFiles.add(manifest.options_page);

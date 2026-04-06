@@ -2,7 +2,9 @@ import { Step } from '../core/Step.js';
 import { ConversionContext } from '../core/ConversionContext.js';
 import { PolyfillService } from '../services/PolyfillService.js';
 import { TemplateService } from '../services/TemplateService.js';
-import { AssetMap, ResourceResult } from '../core/types.js';
+import { ManifestService } from '../services/ManifestService.js';
+import { AssetService } from '../services/AssetService.js';
+import { AssetMap, ResourceResult, ScriptContents } from '../core/types.js';
 import { NormalizedManifest } from '../schemas/ManifestSchema.js';
 import fs from 'fs-extra';
 import { normalizePath } from '../utils/PathUtils.js';
@@ -15,79 +17,141 @@ export class AssembleStep extends Step {
     const manifest = context.get<NormalizedManifest>('manifest');
     const assetMap = context.get<AssetMap>('assetMap');
     const resources = context.get<ResourceResult>('resources');
-    const { target, outputFile } = context.config;
+    const { target, outputFile, inputDir, locale } = context.config;
 
-    const mainPolyfill = await PolyfillService.build(target, assetMap, manifest.raw);
+    const requestedLocale = locale || (manifest.raw as any).default_locale || 'en';
+    // Strict alphanumeric sanitization to prevent path traversal via locale strings
+    const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
+    const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
+
+    // Derive scriptId once for absolute consistency across asset maps and polyfills
+    let scriptId = ManifestService.getInternalId(manifest);
+    if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
+        scriptId = (manifest.name || 'ext')
+            .replace(/[^a-z0-9]+/gi, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .toLowerCase() || 'extension-' + Date.now();
+    }
+
+    const mainPolyfill = (await PolyfillService.build(target, assetMap, manifest.raw, scriptId)) || '';
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
-    const runAtMap: Record<string, string[]> = {
-      'document-start': [], 'document-end': [], 'document-idle': []
-    };
-
-    if (manifest.content_scripts) {
-      for (const cs of manifest.content_scripts) {
-        const runAt = (cs.run_at?.replace('_', '-') || 'document-idle');
-        if (cs.js) {
-          for (const js of cs.js) {
-            const normalized = normalizePath(js);
-            if (resources.jsContents[normalized]) {
-              runAtMap[runAt].push(`// --- ${normalized}\n${resources.jsContents[normalized]}`);
-            }
-          }
-        }
-      }
-    }
-
+    // Build per-config execution logic to support matches/exclude_matches fidelity
     const combinedExecutionLogic = `
-async function executeAllScripts(globalThis, extensionCssData) {
+async function executeConfigScripts(config, globalThis, cssMap) {
     const {chrome, browser, window, self} = globalThis;
 
-    // Inject CSS
-    for (const [path, css] of Object.entries(extensionCssData)) {
-        try {
-            const style = document.createElement('style');
-            style.textContent = css;
-            style.setAttribute('data-extension-path', path);
-            (document.head || document.documentElement).appendChild(style);
-        } catch(e) {}
+    // Inject CSS for this specific config
+    if (config.css) {
+        for (const cssPath of config.css) {
+            const css = cssMap[cssPath];
+            if (css) {
+                try {
+                    const style = document.createElement('style');
+                    style.textContent = css;
+                    style.setAttribute('data-extension-path', cssPath);
+                    (document.head || document.documentElement).appendChild(style);
+                } catch(e) { _error("CSS injection failed for " + cssPath + ". Execution blocked by page CSP (style-src)?", e); }
+            }
+        }
     }
 
-    // --- Document Start
-    ${runAtMap['document-start'].join('\n\n')}
+    // Global hyphen replacement for robust runAt matching
+    const runAt = (config.run_at || 'document_idle').replace(/_/g, '-');
 
-    if (document.readyState === 'loading') {
-        await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+    if (runAt === 'document-end') {
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+        }
+    } else if (runAt === 'document-idle') {
+        if (typeof window.requestIdleCallback === 'function') {
+            await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
+        } else {
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
     }
 
-    // --- Document End
-    ${runAtMap['document-end'].join('\n\n')}
+    // Execute concatenated JS for this specific config to ensure shared scope parity
+    const jsResources = ${JSON.stringify(resources.jsContents)};
+    if (config.js && config.js.length > 0) {
+        const combinedCode = config.js
+            .map(path => jsResources[path])
+            .filter(code => !!code)
+            .join('\n\n// --- Config Script Boundary ---\n\n');
 
-    if (typeof window.requestIdleCallback === 'function') {
-        await new Promise(resolve => window.requestIdleCallback(resolve, { timeout: 2000 }));
-    } else {
-        await new Promise(resolve => setTimeout(resolve, 50));
+        if (combinedCode) {
+            try {
+                // Execute entire bundle in a single isolated Function context
+                new Function('chrome', 'browser', 'window', 'self', combinedCode)(chrome, browser, window, self);
+            } catch(e) { _error("Execution error in bundled config scripts. Execution blocked by page CSP (script-src without 'unsafe-eval')?", e); }
+        }
     }
-
-    // --- Document Idle
-    ${runAtMap['document-idle'].join('\n\n')}
-
-    _log('Phased execution complete.');
 }
 `;
 
-    const finalScript = TemplateService.replace(orchestrationTemplate, {
+    const replacements = {
+      '{{SCRIPT_ID}}': scriptId,
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
       '{{COMBINED_EXECUTION_LOGIC}}': combinedExecutionLogic,
-      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(manifest.content_scripts),
+      '{{CONTENT_SCRIPT_CONFIGS_FOR_MATCHING_ONLY}}': JSON.stringify(manifest.content_scripts || []),
       '{{OPTIONS_PAGE_PATH}}': JSON.stringify(manifest.options_page || null),
       '{{POPUP_PAGE_PATH}}': JSON.stringify(manifest.action.default_popup || null),
       '{{EXTENSION_ICON}}': 'null',
-      '{{LOCALE}}': '{}',
-      '{{USED_LOCALE}}': JSON.stringify(context.config.locale || 'en')
-    });
+      '{{LOCALE}}': JSON.stringify(localeMessages),
+      '{{USED_LOCALE}}': JSON.stringify(usedLocale),
+      '{{EXTENSION_ASSETS_MAP}}': JSON.stringify(assetMap),
+      '{{MIME_MAP}}': JSON.stringify(AssetService.MIME_MAP)
+    };
+
+    const finalPayload = TemplateService.replace(orchestrationTemplate, replacements);
+
+    let header = '';
+    if (target === 'userscript') {
+        const sanitize = (s: any) => (s || '').toString().replace(/[\r\n]/g, ' ').trim();
+
+        const metadata = [
+            '// ==UserScript==',
+            `// @name        ${sanitize(manifest.name)}`,
+            `// @version     ${sanitize(manifest.version)}`,
+            `// @description ${sanitize(manifest.description || 'Converted extension')}`,
+            '// @grant       GM_setValue',
+            '// @grant       GM_getValue',
+            '// @grant       GM_deleteValue',
+            '// @grant       GM_listValues',
+            '// @grant       GM_xmlhttpRequest',
+            '// @grant       GM_openInTab',
+            '// @grant       GM_registerMenuCommand',
+            '// @grant       Notification'
+        ];
+
+        // Advanced usage-based Grant detection by scanning assembled resource contents
+        const allJsContent = Object.values(resources.jsContents).join('\n');
+        if (allJsContent.includes('GM_webRequest') || allJsContent.includes('GM.webRequest')) {
+            metadata.push('// @grant       GM_webRequest');
+        }
+        if (allJsContent.includes('GM_cookie') || allJsContent.includes('GM.cookie')) {
+            metadata.push('// @grant       GM_cookie');
+        }
+
+        const matches = new Set<string>();
+        (manifest.content_scripts || []).forEach(cs => {
+            cs.matches?.forEach(m => matches.add(sanitize(m)));
+        });
+
+        if (matches.size > 0) {
+            matches.forEach(m => metadata.push(`// @match       ${m}`));
+        } else {
+            metadata.push('// @match       *://*/*');
+        }
+
+        metadata.push('// ==/UserScript==');
+        header = metadata.join('\n') + '\n';
+    }
 
     const wrapper = `
+${header}
 (function() {
     'use strict';
     const SCRIPT_NAME = ${JSON.stringify(manifest.name)};
@@ -100,16 +164,22 @@ async function executeAllScripts(globalThis, extensionCssData) {
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
+    // --- Scoped Assets bootstrap
+    if (typeof window.EXTENSION_ASSETS_MAPS !== "object" || window.EXTENSION_ASSETS_MAPS === null) {
+        window.EXTENSION_ASSETS_MAPS = {};
+    }
+
     // --- Polyfill & Logic
     ${mainPolyfill}
 
     // --- Logic
-    ${finalScript}
+    ${finalPayload}
 
     main().catch(e => _error('Initialization error', e));
 })();
 `;
 
+    // Write final assembled output directly to prevent redundant double-replacement of literal tokens
     await fs.outputFile(outputFile, wrapper);
   }
 }
