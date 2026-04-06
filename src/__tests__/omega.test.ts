@@ -62,13 +62,15 @@ const MIMES = {{MIME_MAP}};
     expect(result.success).toBe(true);
     expect(result.extension.name).toBe('Industrial Test');
 
-    const output = vi.mocked(fs.outputFile).mock.calls[0][1] as string;
+    // Robust, order-independent output detection
+    const outputCall = vi.mocked(fs.outputFile).mock.calls.find(c => c[0].endsWith('industrial.user.js'));
+    const output = outputCall?.[1] as string;
 
     expect(output).toContain('// ==UserScript==');
     expect(output).toContain('// @name        Industrial Test');
     expect(output).toContain('// @version     1.2.3');
     expect(output).toContain('// @match       *://test.com/*');
-    // Verify that the REAL bootstrap logic was injected by checking for the code produced by AssembleStep
+    // Verify that the REAL bootstrap logic was injected (since fixture no longer contains this literal)
     expect(output).toContain('window.EXTENSION_ASSETS_MAPS');
     expect(output).toContain('Industrial Test');
 
@@ -80,11 +82,14 @@ const MIMES = {{MIME_MAP}};
     vi.spyOn(UnpackService, 'unpack').mockResolvedValue('/tmp/cleanup-test');
     vi.mocked(fs.remove).mockRejectedValueOnce(new Error('cleanup-fail'));
 
-    await expect(convertExtension({
+    const result = await convertExtension({
         inputDir: 'a.crx',
         outputFile: 'o.js',
         target: 'userscript'
-    })).resolves.toBeDefined();
+    });
+
+    // Assert explicit success despite cleanup failure
+    expect(result).toMatchObject({ success: true });
   });
 
   it('Index: rejects when input directory is missing', async () => {
