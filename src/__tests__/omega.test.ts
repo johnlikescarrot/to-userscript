@@ -37,7 +37,6 @@ const MANIFEST = {{INJECTED_MANIFEST}};
 const LOCALE = {{LOCALE}};
 const MIMES = {{MIME_MAP}};
 {{COMBINED_EXECUTION_LOGIC}}
-window.EXTENSION_ASSETS_MAPS;
 `;
         }
         return 'console.log("industrial asset");';
@@ -50,7 +49,7 @@ window.EXTENSION_ASSETS_MAPS;
     vi.restoreAllMocks();
   });
 
-  it('Index: happy-path conversion pins outcomes', async () => {
+  it('Index: happy-path conversion pins outcomes and verifies bootstrap injection', async () => {
     vi.mocked(fs.stat).mockResolvedValueOnce({ isFile: () => true } as any);
     vi.spyOn(UnpackService, 'unpack').mockResolvedValue('/tmp/unpacked-industrial');
 
@@ -69,6 +68,7 @@ window.EXTENSION_ASSETS_MAPS;
     expect(output).toContain('// @name        Industrial Test');
     expect(output).toContain('// @version     1.2.3');
     expect(output).toContain('// @match       *://test.com/*');
+    // Verify that the REAL bootstrap logic was injected by checking for the code produced by AssembleStep
     expect(output).toContain('window.EXTENSION_ASSETS_MAPS');
     expect(output).toContain('Industrial Test');
 

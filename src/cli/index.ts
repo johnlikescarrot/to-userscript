@@ -18,23 +18,37 @@ function parseExtensionSource(source: string): { type: SourceType; url?: string 
     url = new URL(source);
     // Strict protocol check to prevent treating Windows paths as URLs
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        return { type: 'unknown' };
+        url = null;
     }
   } catch (e) {
-    // If URL parsing failed, it might be a 32-char alphanumeric ID for Chrome Web Store
-    if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
-        return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
-    }
-    return { type: 'unknown' };
+    url = null;
   }
 
-  // url is valid http/https
-  if (url.hostname === 'chromewebstore.google.com' ||
-     (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
-    // Allow getCrxUrl errors to propagate outside for better error reporting on malformed webstore URLs
+  if (url) {
+    if (url.hostname === 'chromewebstore.google.com' ||
+       (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
+      return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
+    }
+    return { type: 'directUrl', url: source };
+  }
+
+  // Alphanumeric 32-char ID check (case-insensitive) for Chrome Web Store
+  if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
     return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
   }
-  return { type: 'directUrl', url: source };
+
+  // Path detection: starts with dot, slash, contains separators, or matches Windows drive letters
+  const isPathLike = source.startsWith('.') ||
+                     source.startsWith('/') ||
+                     source.includes('/') ||
+                     source.includes('\\') ||
+                     /^[a-zA-Z]:\\/.test(source);
+
+  if (isPathLike) {
+      return { type: 'localPath' };
+  }
+
+  return { type: 'unknown' };
 }
 
 const parser = yargs(hideBin(process.argv))
@@ -73,7 +87,6 @@ const parser = yargs(hideBin(process.argv))
 
         if (parsed.url) {
           console.log(chalk.blue('Downloading extension...'));
-          // Robust temporary directory usage
           tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'to-userscript-download-'));
           const tempFilePath = path.join(tempDir, 'extension.zip');
           source = await DownloadService.download(parsed.url, tempFilePath);
@@ -91,7 +104,6 @@ const parser = yargs(hideBin(process.argv))
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error(chalk.red.bold('\n❌ Conversion failed:'), msg);
-        // Error bubbles to the global handler for process termination
         throw error;
       } finally {
         if (tempDir) {
@@ -176,7 +188,6 @@ async function run() {
     try {
         await parser.parseAsync();
     } catch (err) {
-        // Suppress redundant error logging here as commands handle their own logging
         process.exit(1);
     }
 }
