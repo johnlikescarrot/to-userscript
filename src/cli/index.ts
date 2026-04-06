@@ -10,6 +10,21 @@ import chalk from 'chalk';
 import { convertExtension } from '../index.js';
 import { DownloadService } from '../services/DownloadService.js';
 
+type SourceType = 'localPath' | 'chromeWebStoreListing' | 'directUrl' | 'unknown';
+
+function parseExtensionSource(source: string): { type: SourceType; url?: string } {
+  if (source.includes('chromewebstore.google.com') || source.includes('chrome.google.com/webstore')) {
+    return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
+  }
+  if (/^https?:\/\//.test(source)) {
+    return { type: 'directUrl', url: source };
+  }
+  if (source.length === 32 && /^[a-z]{32}$/.test(source)) {
+    return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
+  }
+  return { type: 'localPath' };
+}
+
 const parser = yargs(hideBin(process.argv))
   .scriptName('to-userscript')
   .usage('$0 <command> [options]')
@@ -31,14 +46,16 @@ const parser = yargs(hideBin(process.argv))
     },
     async (argv) => {
       let source = argv.source as string;
-      let tempDownloadPath: string | null = null;
+      let tempDir: string | null = null;
+      let tempFilePath: string | null = null;
 
       try {
-        if (source.startsWith('http')) {
+        const parsed = parseExtensionSource(source);
+        if (parsed.url) {
           console.log(chalk.blue('Downloading extension...'));
-          const url = source.includes('chromewebstore') ? DownloadService.getCrxUrl(source) : source;
-          tempDownloadPath = path.resolve(os.tmpdir(), `to-userscript-download-${Date.now()}.zip`);
-          source = await DownloadService.download(url, tempDownloadPath);
+          tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'to-userscript-'));
+          tempFilePath = path.join(tempDir, 'extension.zip');
+          source = await DownloadService.download(parsed.url, tempFilePath);
         }
 
         await convertExtension({
@@ -53,10 +70,10 @@ const parser = yargs(hideBin(process.argv))
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error(chalk.red.bold('\n❌ Conversion failed:'), msg);
-        throw error; // Rethrow to ensure absolute cleanup guard works and return code is set
+        throw error;
       } finally {
-        if (tempDownloadPath) {
-          await fs.remove(tempDownloadPath).catch(() => {});
+        if (tempDir) {
+          await fs.remove(tempDir).catch(() => {});
         }
       }
     }
@@ -68,7 +85,8 @@ const parser = yargs(hideBin(process.argv))
     async (argv) => {
       try {
         const source = argv.source as string;
-        const url = source.startsWith('http') ? source : DownloadService.getCrxUrl(source);
+        const parsed = parseExtensionSource(source);
+        const url = parsed.url || source;
         const dest = path.resolve(process.cwd(), 'extension.zip');
         await DownloadService.download(url, dest);
         console.log(chalk.green('Downloaded to:'), dest);
@@ -88,6 +106,10 @@ const parser = yargs(hideBin(process.argv))
         const filePath = path.resolve(argv.userscript as string);
         if (!(await fs.pathExists(filePath))) {
             throw new Error(`File not found: ${filePath}`);
+        }
+        const stat = await fs.stat(filePath);
+        if (!stat.isFile()) {
+            throw new Error(`Expected a file but found a directory: ${filePath}`);
         }
         const fileUrl = pathToFileURL(filePath).href;
         console.log('// ==UserScript==');
@@ -111,7 +133,6 @@ async function run() {
     }
 }
 
-// Only run if called directly
 const mainFile = process.argv[1];
 if (mainFile && (import.meta.url === pathToFileURL(mainFile).href || mainFile.endsWith('to-userscript'))) {
     run();

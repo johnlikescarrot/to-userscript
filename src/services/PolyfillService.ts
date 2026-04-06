@@ -8,13 +8,12 @@ export class PolyfillService {
   static async build(
     target: 'userscript' | 'vanilla' | 'postmessage',
     assetMap: AssetMap,
-    manifest: Manifest
+    manifest: Manifest,
+    scriptId: string
   ): Promise<string> {
     const messaging = await TemplateService.load('messaging');
     const abstraction = await TemplateService.load(`abstractionLayer.${target === 'userscript' ? 'userscript' : target === 'vanilla' ? 'vanilla' : 'postmessage'}`);
     const polyfillTemplate = await TemplateService.load('polyfill');
-
-    const internalId = ManifestService.getInternalId(manifest);
 
     const decodingHelper = `
 function _base64ToUint8Array(base64) {
@@ -33,7 +32,7 @@ function _base64ToUint8Array(base64) {
       getURL: (path) => {
         if (!path) return "";
         let cleanPath = path.startsWith("/") ? path.substring(1) : path;
-        const assets = window.EXTENSION_ASSETS_MAPS["${internalId}"] || {};
+        const assets = window.EXTENSION_ASSETS_MAPS["${scriptId}"] || {};
         const data = assets[cleanPath];
         if (typeof data === "undefined") return path;
 
@@ -50,7 +49,7 @@ function _base64ToUint8Array(base64) {
     // Order matters: replace polyfill internal placeholders before full template injection
     let polyfillBody = polyfillTemplate
       .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
-      .replace(/{{SCRIPT_ID}}/g, internalId)
+      .replace(/{{SCRIPT_ID}}/g, scriptId)
       .replace(/getURL: \(path\) => .*,/, getURLImpl + ',')
       .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest));
 

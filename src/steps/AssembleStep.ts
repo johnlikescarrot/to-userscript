@@ -19,15 +19,12 @@ export class AssembleStep extends Step {
     const resources = context.get<ResourceResult>('resources');
     const { target, outputFile, inputDir, locale } = context.config;
 
-    const mainPolyfill = (await PolyfillService.build(target, assetMap, manifest.raw)) || '';
-    const orchestrationTemplate = await TemplateService.load('orchestration');
-
     const requestedLocale = locale || (manifest.raw as any).default_locale || 'en';
     const usedLocale = /^[A-Za-z0-9_]+$/.test(requestedLocale) ? requestedLocale : 'en';
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
+    // Derived once and used everywhere for consistency
     let scriptId = ManifestService.getInternalId(manifest);
-    // Industrial-grade scriptId validation and fallback with hyphen collapse
     if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
         scriptId = (manifest.name || 'ext')
             .replace(/[^a-z0-9]+/gi, '-')
@@ -36,12 +33,14 @@ export class AssembleStep extends Step {
             .toLowerCase() || 'extension-' + Date.now();
     }
 
-    // Build per-config execution logic to support matches/exclude_matches fidelity
+    const mainPolyfill = (await PolyfillService.build(target, assetMap, manifest.raw, scriptId)) || '';
+    const orchestrationTemplate = await TemplateService.load('orchestration');
+
+    // Build per-config execution logic
     const combinedExecutionLogic = `
 async function executeConfigScripts(config, globalThis, cssMap) {
     const {chrome, browser, window, self} = globalThis;
 
-    // Inject CSS for this specific config
     if (config.css) {
         for (const cssPath of config.css) {
             const css = cssMap[cssPath];
@@ -56,9 +55,7 @@ async function executeConfigScripts(config, globalThis, cssMap) {
         }
     }
 
-    // Global hyphen replacement for robust runAt matching
     const runAt = (config.run_at || 'document_idle').replace(/_/g, '-');
-
     if (runAt === 'document-end') {
         if (document.readyState === 'loading') {
             await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
@@ -71,7 +68,6 @@ async function executeConfigScripts(config, globalThis, cssMap) {
         }
     }
 
-    // Execute concatenated JS for this specific config to ensure shared scope parity
     const jsResources = ${JSON.stringify(resources.jsContents)};
     if (config.js && config.js.length > 0) {
         const combinedCode = config.js
@@ -81,15 +77,14 @@ async function executeConfigScripts(config, globalThis, cssMap) {
 
         if (combinedCode) {
             try {
-                // Isolation via single Function constructor call for the entire config bundle
                 new Function('chrome', 'browser', 'window', 'self', combinedCode)(chrome, browser, window, self);
-            } catch(e) { _error("Execution error in combined scripts for config", e); }
+            } catch(e) { _error("Execution error in combined scripts", e); }
         }
     }
 }
 `;
 
-    const replacements = {
+    const finalPayload = TemplateService.replace(orchestrationTemplate, {
       '{{SCRIPT_ID}}': scriptId,
       '{{INJECTED_MANIFEST}}': JSON.stringify(manifest.raw),
       '{{EXTENSION_CSS_DATA}}': JSON.stringify(resources.cssContents),
@@ -102,14 +97,11 @@ async function executeConfigScripts(config, globalThis, cssMap) {
       '{{USED_LOCALE}}': JSON.stringify(usedLocale),
       '{{EXTENSION_ASSETS_MAP}}': JSON.stringify(assetMap),
       '{{MIME_MAP}}': JSON.stringify(AssetService.MIME_MAP)
-    };
-
-    const finalPayload = TemplateService.replace(orchestrationTemplate, replacements);
+    });
 
     let header = '';
     if (target === 'userscript') {
         const sanitize = (s: any) => (s || '').toString().replace(/[\r\n]/g, ' ').trim();
-
         const metadata = [
             '// ==UserScript==',
             `// @name        ${sanitize(manifest.name)}`,
@@ -125,21 +117,18 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             '// @grant       Notification'
         ];
 
-        // Safe Grant detection: consult polyfill template before manifest injection to avoid false positives
-        const basePolyfill = (await PolyfillService.build(target, {}, { name: 'grants-probe' } as any)) || '';
-        if (basePolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
-        if (basePolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
+        // Advanced usage-based Grant detection
+        const allCode = mainPolyfill + finalPayload;
+        if (allCode.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
+        if (allCode.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
 
         const matches = new Set<string>();
         (manifest.content_scripts || []).forEach(cs => {
             cs.matches?.forEach(m => matches.add(sanitize(m)));
         });
 
-        if (matches.size > 0) {
-            matches.forEach(m => metadata.push(`// @match       ${m}`));
-        } else {
-            metadata.push('// @match       *://*/*');
-        }
+        if (matches.size > 0) matches.forEach(m => metadata.push(`// @match       ${m}`));
+        else metadata.push('// @match       *://*/*');
 
         metadata.push('// ==/UserScript==');
         header = metadata.join('\n') + '\n';
@@ -159,11 +148,6 @@ ${header}
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
-    // --- Scoped Assets
-    if (typeof window.EXTENSION_ASSETS_MAPS !== "object" || window.EXTENSION_ASSETS_MAPS === null) {
-        window.EXTENSION_ASSETS_MAPS = {};
-    }
-
     // --- Polyfill & Logic
     ${mainPolyfill}
 
@@ -174,6 +158,6 @@ ${header}
 })();
 `;
 
-    await fs.outputFile(outputFile, TemplateService.replace(wrapper, replacements));
+    await fs.outputFile(outputFile, wrapper);
   }
 }
