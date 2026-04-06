@@ -18,29 +18,23 @@ function parseExtensionSource(source: string): { type: SourceType; url?: string 
     url = new URL(source);
     // Strict protocol check to prevent treating Windows paths as URLs
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        url = null;
+        return { type: 'unknown' };
     }
   } catch (e) {
-    // URL parsing failed
-    url = null;
-  }
-
-  if (url) {
-    // Explicit hostname validation to prevent spoofing
-    if (url.hostname === 'chromewebstore.google.com' ||
-       (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
-      // Allow getCrxUrl errors to propagate outside for better error reporting on malformed webstore URLs
-      return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
+    // If URL parsing failed, it might be a 32-char alphanumeric ID for Chrome Web Store
+    if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
+        return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
     }
-    return { type: 'directUrl', url: source };
+    return { type: 'unknown' };
   }
 
-  // Alphanumeric 32-char ID check (case-insensitive) for Chrome Web Store
-  if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
+  // url is valid http/https
+  if (url.hostname === 'chromewebstore.google.com' ||
+     (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
+    // Allow getCrxUrl errors to propagate outside for better error reporting on malformed webstore URLs
     return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
   }
-
-  return { type: 'localPath' };
+  return { type: 'directUrl', url: source };
 }
 
 const parser = yargs(hideBin(process.argv))
@@ -72,6 +66,10 @@ const parser = yargs(hideBin(process.argv))
         // P1: Local path precedence. If the source exists locally, treat as localPath and skip download branch.
         const isLocal = await fs.pathExists(path.resolve(source));
         const parsed = isLocal ? { type: 'localPath' as const } : parseExtensionSource(source);
+
+        if (parsed.type === 'unknown') {
+            throw new Error(`Unrecognized extension source: ${source}. Please provide a valid local path, extension URL, or 32-character extension ID.`);
+        }
 
         if (parsed.url) {
           console.log(chalk.blue('Downloading extension...'));
@@ -120,12 +118,21 @@ const parser = yargs(hideBin(process.argv))
         if (parsed.type === 'localPath') {
             throw new Error('Local paths are not supported by the download command. Please provide a URL or extension ID.');
         }
+        if (parsed.type === 'unknown') {
+            throw new Error(`Unrecognized download source: ${source}. Please provide a valid extension URL or 32-character extension ID.`);
+        }
 
         const url = parsed.url || source;
         const dest = path.resolve(argv.output as string || 'extension.zip');
 
-        if (!argv.force && await fs.pathExists(dest)) {
-            throw new Error(`Output file already exists: ${dest}. Use --force to overwrite.`);
+        if (await fs.pathExists(dest)) {
+            const stat = await fs.stat(dest);
+            if (stat.isDirectory()) {
+                throw new Error(`The output path is a directory: ${dest}. Please specify a file path.`);
+            }
+            if (!argv.force) {
+                throw new Error(`Output file already exists: ${dest}. Use --force to overwrite.`);
+            }
         }
 
         await DownloadService.download(url, dest);

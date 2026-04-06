@@ -1,22 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { convertExtension } from '../index.js';
 import fs from 'fs-extra';
 import { UnpackService } from '../services/UnpackService.js';
 import { ManifestService } from '../services/ManifestService.js';
-import { DownloadService } from '../services/DownloadService.js';
 import * as RegexUtils from '../utils/RegexUtils.js';
-import yauzl from 'yauzl';
-import { EventEmitter } from 'events';
 
 vi.mock('fs-extra');
 vi.mock('node-fetch');
-vi.mock('yauzl');
-vi.mock('../services/DownloadService.js');
 
 describe('Industrial Transformation: Elite Verification Suite', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.restoreAllMocks();
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -52,7 +46,11 @@ window.EXTENSION_ASSETS_MAPS;
     vi.mocked(fs.remove).mockResolvedValue(undefined);
   });
 
-  it('Index: covers all branches and pins outcomes with realistic verification', async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('Index: happy-path conversion pins outcomes', async () => {
     vi.mocked(fs.stat).mockResolvedValueOnce({ isFile: () => true } as any);
     vi.spyOn(UnpackService, 'unpack').mockResolvedValue('/tmp/unpacked-industrial');
 
@@ -67,7 +65,6 @@ window.EXTENSION_ASSETS_MAPS;
 
     const output = vi.mocked(fs.outputFile).mock.calls[0][1] as string;
 
-    // Assertions on concrete generated content structure
     expect(output).toContain('// ==UserScript==');
     expect(output).toContain('// @name        Industrial Test');
     expect(output).toContain('// @version     1.2.3');
@@ -76,16 +73,28 @@ window.EXTENSION_ASSETS_MAPS;
     expect(output).toContain('Industrial Test');
 
     expect(fs.remove).toHaveBeenCalled();
+  });
 
-    // Verify BEST-EFFORT cleanup (doesn't throw if remove fails)
+  it('Index: cleanup-resilience when removal fails', async () => {
     vi.mocked(fs.stat).mockResolvedValueOnce({ isFile: () => true } as any);
+    vi.spyOn(UnpackService, 'unpack').mockResolvedValue('/tmp/cleanup-test');
     vi.mocked(fs.remove).mockRejectedValueOnce(new Error('cleanup-fail'));
-    await expect(convertExtension({ inputDir: 'a.crx', outputFile: 'o.js', target: 'userscript' })).resolves.toBeDefined();
 
-    // Assert missing input directory throws correct error
+    await expect(convertExtension({
+        inputDir: 'a.crx',
+        outputFile: 'o.js',
+        target: 'userscript'
+    })).resolves.toBeDefined();
+  });
+
+  it('Index: rejects when input directory is missing', async () => {
     vi.mocked(fs.pathExists).mockResolvedValueOnce(false);
-    await expect(convertExtension({ inputDir: 'none', outputFile: 'o.js', target: 'userscript' }))
-        .rejects.toThrow('Input directory or archive not found');
+
+    await expect(convertExtension({
+        inputDir: 'none',
+        outputFile: 'o.js',
+        target: 'userscript'
+    })).rejects.toThrow('Input directory or archive not found');
   });
 
   it('Services: Locale success and error fallback assertions', async () => {
