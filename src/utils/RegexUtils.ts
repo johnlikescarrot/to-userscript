@@ -1,5 +1,5 @@
 export function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return s.replace(/[.*+?^$${}()|[\]\\]/g, '\\$&');
 }
 
 export function convertMatchPatternToRegExpString(pattern: string): string {
@@ -10,8 +10,13 @@ export function convertMatchPatternToRegExpString(pattern: string): string {
   const schemeMatch = pattern.match(/^(\*|https?|file|ftp):\/\//);
   if (!schemeMatch) return '$.';
   const scheme = schemeMatch[1];
-  const remaining = pattern.substring(schemeMatch[0].length);
+  let remaining = pattern.substring(schemeMatch[0].length);
   const schemeRegex = scheme === '*' ? 'https?|file|ftp' : scheme;
+
+  if (scheme === "file") {
+    let cleanPath = remaining.startsWith("/") ? remaining.substring(1) : remaining;
+    return `^file:\\\/\\\/\\\/${cleanPath.split("*").map(escapeRegex).join(".*")}(?:[?#]|$)`;
+  }
 
   const hostMatch = remaining.match(/^([^\/]+)/);
   if (!hostMatch) return '$.';
@@ -63,7 +68,7 @@ export function matchGlobPattern(pattern: string, testPath: string): boolean {
   if (normalizedPattern === normalizedPath) return true;
 
   let regexPattern = normalizedPattern
-    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/[.+?^$${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, '__DOUBLESTAR__')
     .replace(/\*/g, '[^/]*')
     .replace(/__DOUBLESTAR__/g, '.*');

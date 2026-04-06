@@ -42,7 +42,7 @@ function _base64ToUint8Array(base64) {
         const mimeType = mimeMap[ext] || "application/octet-stream";
 
         // High-fidelity extension match matching orchestration template
-        const isText = [".html", ".htm", ".js", ".css", ".json", ".svg"].includes(ext);
+        const isText = [".html", ".htm", ".js", ".css", ".json", ".svg", ".txt", ".md"].includes(ext);
         const blob = isText ? new Blob([data], { type: mimeType }) : new Blob([_base64ToUint8Array(data)], { type: mimeType });
         return URL.createObjectURL(blob);
       }
