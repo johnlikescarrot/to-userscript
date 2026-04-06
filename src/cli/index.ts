@@ -13,27 +13,34 @@ import { DownloadService } from '../services/DownloadService.js';
 type SourceType = 'localPath' | 'chromeWebStoreListing' | 'directUrl' | 'unknown';
 
 function parseExtensionSource(source: string): { type: SourceType; url?: string } {
+  let url: URL | null = null;
   try {
-    const url = new URL(source);
+    url = new URL(source);
     // Strict protocol check to prevent treating Windows paths as URLs
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        throw new Error('Invalid protocol');
+        url = null;
     }
+  } catch (e) {
+    // URL parsing failed
+    url = null;
+  }
 
+  if (url) {
     // Explicit hostname validation to prevent spoofing
     if (url.hostname === 'chromewebstore.google.com' ||
        (url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore'))) {
-      // Allow getCrxUrl errors to propagate for better error reporting on malformed webstore URLs
+      // Allow getCrxUrl errors to propagate outside for better error reporting on malformed webstore URLs
       return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
     }
     return { type: 'directUrl', url: source };
-  } catch (e) {
-    // Alphanumeric 32-char ID check (case-insensitive) for Chrome Web Store
-    if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
-      return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
-    }
-    return { type: 'localPath' };
   }
+
+  // Alphanumeric 32-char ID check (case-insensitive) for Chrome Web Store
+  if (source.length === 32 && /^[a-z0-9]{32}$/i.test(source)) {
+    return { type: 'chromeWebStoreListing', url: DownloadService.getCrxUrl(source) };
+  }
+
+  return { type: 'localPath' };
 }
 
 const parser = yargs(hideBin(process.argv))
