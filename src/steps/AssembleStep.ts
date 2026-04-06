@@ -27,14 +27,21 @@ export class AssembleStep extends Step {
     const localeMessages = await ManifestService.loadLocaleMessages(inputDir, usedLocale);
 
     let scriptId = ManifestService.getInternalId(manifest);
+    // Industrial-grade scriptId validation and fallback
     if (!scriptId || !/^[a-z0-9-]+$/.test(scriptId)) {
-        scriptId = (manifest.name || 'ext').replace(/[^a-z0-9]/gi, '-').toLowerCase() || 'extension-' + Date.now();
+        scriptId = (manifest.name || 'ext')
+            .replace(/[^a-z0-9]+/gi, '-')
+            .replace(/-+$/, '')
+            .replace(/^-+/, '')
+            .toLowerCase() || 'extension-' + Date.now();
     }
 
+    // Build per-config execution logic to support matches/exclude_matches fidelity
     const combinedExecutionLogic = `
 async function executeConfigScripts(config, globalThis, cssMap) {
     const {chrome, browser, window, self} = globalThis;
 
+    // Inject CSS for this specific config
     if (config.css) {
         for (const cssPath of config.css) {
             const css = cssMap[cssPath];
@@ -50,6 +57,7 @@ async function executeConfigScripts(config, globalThis, cssMap) {
     }
 
     const runAt = (config.run_at || 'document_idle').replace('_', '-');
+
     if (runAt === 'document-end') {
         if (document.readyState === 'loading') {
             await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
@@ -62,6 +70,7 @@ async function executeConfigScripts(config, globalThis, cssMap) {
         }
     }
 
+    // Execute concatenated JS for this specific config to ensure shared scope parity
     const jsResources = ${JSON.stringify(resources.jsContents)};
     if (config.js && config.js.length > 0) {
         const combinedCode = config.js
@@ -71,8 +80,9 @@ async function executeConfigScripts(config, globalThis, cssMap) {
 
         if (combinedCode) {
             try {
+                // Isolation via single Function constructor call for the entire config bundle
                 new Function('chrome', 'browser', 'window', 'self', combinedCode)(chrome, browser, window, self);
-            } catch(e) { _error("Execution error in combined scripts", e); }
+            } catch(e) { _error("Execution error in combined scripts for config", e); }
         }
     }
 }
@@ -97,7 +107,9 @@ async function executeConfigScripts(config, globalThis, cssMap) {
 
     let header = '';
     if (target === 'userscript') {
+        // Metadata sanitization to prevent injection
         const sanitize = (s: any) => (s || '').toString().replace(/[\r\n]/g, ' ').trim();
+
         const metadata = [
             '// ==UserScript==',
             `// @name        ${sanitize(manifest.name)}`,
@@ -113,6 +125,7 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             '// @grant       Notification'
         ];
 
+        // Heuristic grant detection
         if (mainPolyfill.includes('GM_webRequest')) metadata.push('// @grant       GM_webRequest');
         if (mainPolyfill.includes('GM_cookie')) metadata.push('// @grant       GM_cookie');
 
@@ -121,8 +134,11 @@ async function executeConfigScripts(config, globalThis, cssMap) {
             cs.matches?.forEach(m => matches.add(sanitize(m)));
         });
 
-        if (matches.size > 0) matches.forEach(m => metadata.push(`// @match       ${m}`));
-        else metadata.push('// @match       *://*/*');
+        if (matches.size > 0) {
+            matches.forEach(m => metadata.push(`// @match       ${m}`));
+        } else {
+            metadata.push('// @match       *://*/*');
+        }
 
         metadata.push('// ==/UserScript==');
         header = metadata.join('\n') + '\n';
@@ -157,7 +173,6 @@ ${header}
 })();
 `;
 
-    // Final global replacement to catch placeholders injected in polyfill template
     await fs.outputFile(outputFile, TemplateService.replace(wrapper, replacements));
   }
 }
