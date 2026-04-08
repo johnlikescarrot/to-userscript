@@ -25,6 +25,7 @@ export class ManifestService {
       action: {},
       background_scripts: [],
       web_accessible_resources: [],
+      dnr_rule_resources: [],
       raw: parsed,
     };
 
@@ -45,6 +46,7 @@ export class ManifestService {
       normalized.options_page = parsed.options_ui?.page;
       normalized.web_accessible_resources = (parsed.web_accessible_resources || [])
         .flatMap(r => r.resources);
+      normalized.dnr_rule_resources = parsed.declarative_net_request?.rule_resources || [];
     }
 
     return normalized;

@@ -1,5 +1,5 @@
-function buildPolyfill({ isBackground = false } = {}) {
-  const BUS = createEventBus("{{SCRIPT_ID}}");
+function buildPolyfill({ isBackground = false, bus = null } = {}) {
+  const BUS = bus || createEventBus("{{SCRIPT_ID}}");
   const RUNTIME = createRuntime(isBackground ? "background" : "tab", BUS);
 
   const assetsMap = window.EXTENSION_ASSETS_MAPS["{{SCRIPT_ID}}"] || {};
@@ -15,60 +15,81 @@ function buildPolyfill({ isBackground = false } = {}) {
     });
   }
 
-  // Stateful DNR rule management
+  // --- DNR Engine (Industrial Grade)
   let _dynamicRules = [];
-  const _staticRulesMap = {{STATIC_DNR_RULES}};
-  let _enabledRulesetIds = ({{STATIC_DNR_CONFIGS}}).filter(c => c.enabled).map(c => c.id);
-  let _registeredScripts = [];
+  let _enabledRulesetIds = ["default"];
+  let _staticRulesets = {{STATIC_DNR_CONFIGS}} || [];
+  let _allStaticRules = {{STATIC_DNR_RULES}} || {};
+  let _cachedSortedRules = null;
 
-  const _evaluateDnrRule = (rule, url, resourceType, initiator) => {
-    const { condition } = rule;
+  function _recomputeDnrCache() {
+    let allRules = [..._dynamicRules];
+    _enabledRulesetIds.forEach(id => {
+      const rules = _allStaticRules[id] || [];
+      allRules = allRules.concat(rules);
+    });
+
+    // P1: Priority-based sorting (Industrial Spec: Higher Priority > Lower Priority)
+    // Action Precedence: allow > block > redirect > upgradeScheme
+    const actionOrder = { "allow": 0, "block": 1, "redirect": 2, "upgradeScheme": 3 };
+
+    _cachedSortedRules = allRules.sort((a, b) => {
+      if (a.priority !== b.priority) return (b.priority || 1) - (a.priority || 1);
+      return (actionOrder[a.action.type] || 99) - (actionOrder[b.action.type] || 99);
+    });
+
+    // P2: Synchronize with GM_webRequest if available
+    if (typeof GM_webRequest === "function") {
+      const mapped = _cachedSortedRules.map(r => ({
+        selector: r.condition?.urlFilter || r.condition?.regexFilter || "*",
+        action: r.action.type === "block" ? "cancel" : "ok"
+      }));
+      try { GM_webRequest(mapped, () => {}); } catch(e) {}
+    }
+  }
+
+  function _evaluateDnrRule(rule, url, resourceType, initiator) {
+    const { condition, action } = rule;
     if (!condition) return false;
 
+    // Resource Type filtering
+    if (condition.resourceTypes && !condition.resourceTypes.includes(resourceType)) return false;
+    if (condition.excludedResourceTypes && condition.excludedResourceTypes.includes(resourceType)) return false;
+
+    // URL filtering
     if (condition.urlFilter) {
-      const regex = convertMatchPatternToRegExp(condition.urlFilter);
+      // P1: Use dedicated DNR URL filter logic
+      const regex = dnrUrlFilterToRegex(condition.urlFilter, condition.isUrlFilterCaseSensitive !== false);
       if (!regex.test(url)) return false;
     } else if (condition.regexFilter) {
-      const regex = new RegExp(condition.regexFilter, condition.isUrlFilterCaseSensitive === false ? 'i' : '');
-      if (!regex.test(url)) return false;
-    }
-
-    if (condition.resourceTypes && condition.resourceTypes.length > 0) {
-      if (!condition.resourceTypes.includes(resourceType)) return false;
-    }
-    if (condition.excludedResourceTypes && condition.excludedResourceTypes.length > 0) {
-      if (condition.excludedResourceTypes.includes(resourceType)) return false;
-    }
-
-    if (initiator) {
+      // P2: Safety wrap for invalid regex patterns from manifest
       try {
-        const initiatorUrl = new URL(initiator);
-        const domain = initiatorUrl.hostname;
-        if (condition.initiatorDomains && condition.initiatorDomains.length > 0) {
-          if (!condition.initiatorDomains.some(d => domain === d || domain.endsWith('.' + d))) return false;
-        }
-        if (condition.excludedInitiatorDomains && condition.excludedInitiatorDomains.length > 0) {
-          if (condition.excludedInitiatorDomains.some(d => domain === d || domain.endsWith('.' + d))) return false;
-        }
-      } catch (e) {}
+        const regex = new RegExp(condition.regexFilter, condition.isUrlFilterCaseSensitive === false ? 'i' : '');
+        if (!regex.test(url)) return false;
+      } catch (e) { return false; }
+    }
+
+    // Initiator filtering
+    if (initiator) {
+      if (condition.initiatorDomains && !condition.initiatorDomains.some(d => initiator.includes(d))) return false;
+      if (condition.excludedInitiatorDomains && condition.excludedInitiatorDomains.some(d => initiator.includes(d))) return false;
     }
 
     return true;
-  };
+  }
 
-  const _applyDnrRules = (url, resourceType, initiator) => {
-    let allRules = [..._dynamicRules];
-    _enabledRulesetIds.forEach(id => {
-      if (_staticRulesMap[id]) allRules = allRules.concat(_staticRulesMap[id]);
-    });
+  function _applyDnrRules(url, resourceType = "xmlhttprequest", initiator = window.location.origin) {
+    if (!_cachedSortedRules) _recomputeDnrCache();
 
-    const sortedRules = allRules.sort((a, b) => (b.priority || 1) - (a.priority || 1));
-
-    for (const rule of sortedRules) {
-      if (_evaluateDnrRule(rule, url, resourceType, initiator)) return rule.action;
+    for (const rule of _cachedSortedRules) {
+      if (_evaluateDnrRule(rule, url, resourceType, initiator)) {
+        return rule.action;
+      }
     }
-    return null;
-  };
+    return { type: "allow" };
+  }
+
+  let _registeredScripts = [];
 
   const polyfill = {
     runtime: {
@@ -196,27 +217,20 @@ function buildPolyfill({ isBackground = false } = {}) {
       updateDynamicRules: async ({ addRules = [], removeRuleIds = [] } = {}) => {
         _dynamicRules = _dynamicRules.filter(r => !removeRuleIds.includes(r.id));
         addRules.forEach(r => {
-          _dynamicRules = _dynamicRules.filter(dr => dr.id !== r.id);
-          _dynamicRules.push({ ...r });
+            _dynamicRules = _dynamicRules.filter(dr => dr.id !== r.id);
+            _dynamicRules.push({ ...r });
         });
-        if (typeof GM_webRequest === "function") {
-          const mappedRules = _dynamicRules.map(r => ({
-            selector: r.condition?.urlFilter || "*",
-            action: r.action?.type === "block" ? "cancel" : "ok"
-          }));
-          try { GM_webRequest(mappedRules, () => {}); } catch(e) { _warn("GM_webRequest error:", e); }
-        }
-        return Promise.resolve();
+        _recomputeDnrCache();
       },
       getDynamicRules: () => Promise.resolve([..._dynamicRules]),
-      getEnabledRulesets: () => Promise.resolve([..._enabledRulesetIds]),
       updateEnabledRulesets: async ({ enableRulesetIds = [], disableRulesetIds = [] } = {}) => {
         _enabledRulesetIds = _enabledRulesetIds.filter(id => !disableRulesetIds.includes(id));
         enableRulesetIds.forEach(id => {
           if (!_enabledRulesetIds.includes(id)) _enabledRulesetIds.push(id);
         });
-        return Promise.resolve();
+        _recomputeDnrCache();
       },
+      getEnabledRulesets: () => Promise.resolve([..._enabledRulesetIds]),
       getMatchedRules: () => Promise.resolve({ rulesMatchedInfo: [] }),
       setExtensionActionOptions: () => Promise.resolve(),
     },
@@ -260,7 +274,12 @@ function buildPolyfill({ isBackground = false } = {}) {
         setTitle: (d) => { console.log("Title set:", d.title); return Promise.resolve(); },
         setIcon: (d) => { console.log("Icon set:", d); return Promise.resolve(); },
         enable: () => Promise.resolve(),
-        disable: () => Promise.resolve()
+        disable: () => Promise.resolve(),
+        // P1: Handle action clicks via event bus
+        onClicked: {
+          addListener: (l) => BUS.on('__ACTION_CLICKED__', (p) => l(p?.tab || { id: 1 })),
+          removeListener: (l) => BUS.off('__ACTION_CLICKED__', l)
+        }
     },
     permissions: {
       contains: () => Promise.resolve(true),

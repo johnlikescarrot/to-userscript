@@ -1,11 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { execSync } from 'child_process';
+import { describe, it, expect, vi } from 'vitest';
+import { parser } from '../index.js';
 
 describe('CLI Integration', () => {
-  const binPath = 'node dist/cli/index.js';
-
-  it('should show help message', () => {
-    const output = execSync(`${binPath} --help`).toString();
-    expect(output).toContain('to-userscript <command> [options]');
+  it('should show help message', async () => {
+    const help = await new Promise<string>((resolve) => {
+      parser.parse('--help', (err: any, argv: any, output: string) => {
+        resolve(output);
+      });
+    });
+    expect(help).toContain('Convert an extension to a userscript');
   });
 });

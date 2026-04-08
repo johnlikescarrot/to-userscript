@@ -64,6 +64,13 @@ export const ManifestV3Schema = z.object({
     resources: z.array(z.string()),
     matches: z.array(z.string()).optional(),
   })).optional(),
+  declarative_net_request: z.object({
+    rule_resources: z.array(z.object({
+      id: z.string(),
+      enabled: z.boolean(),
+      path: z.string(),
+    })).optional(),
+  }).optional(),
 });
 
 export const ManifestSchema = z.union([ManifestV2Schema, ManifestV3Schema]);
@@ -82,6 +89,7 @@ export interface NormalizedManifest {
   options_page?: string;
   background_scripts: string[];
   web_accessible_resources: string[];
+  dnr_rule_resources: { id: string, enabled: boolean, path: string }[];
   raw: any;
 }
 

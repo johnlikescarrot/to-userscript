@@ -8,7 +8,9 @@ export class PolyfillService {
     target: 'userscript' | 'vanilla' | 'postmessage',
     assetMap: AssetMap,
     manifest: Manifest,
-    scriptId: string
+    scriptId: string,
+    dnrRules: Record<string, any[]> = {},
+    enabledRulesetIds: string[] = ["default"]
   ): Promise<string> {
     const messaging = await TemplateService.load('messaging');
     const abstraction = await TemplateService.load(`abstractionLayer.${target === 'userscript' ? 'userscript' : target === 'vanilla' ? 'vanilla' : 'postmessage'}`);
@@ -49,11 +51,14 @@ function _base64ToUint8Array(base64) {
     `;
 
     // Replacement pass: replace getURL implementation and internal identifiers
+    // P1: Robust replacement for all template tokens including DNR
     let polyfillBody = polyfillTemplate
-      .replace('{{IS_IFRAME}}', target === 'postmessage' ? 'true' : 'false')
+      .replace(/{{IS_IFRAME}}/g, target === 'postmessage' ? 'true' : 'false')
       .replace(/{{SCRIPT_ID}}/g, internalId)
-      .replace('{{GETURL_IMPL}}', getURLImpl)
-      .replace('{{INJECTED_MANIFEST}}', JSON.stringify(manifest));
+      .replace(/{{GETURL_IMPL}}/g, getURLImpl)
+      .replace(/{{INJECTED_MANIFEST}}/g, JSON.stringify(manifest))
+      .replace(/{{STATIC_DNR_RULES}}/g, JSON.stringify(dnrRules))
+      .replace(/{{STATIC_DNR_CONFIGS}}/g, JSON.stringify(enabledRulesetIds));
 
     let combined = `
 ${decodingHelper}

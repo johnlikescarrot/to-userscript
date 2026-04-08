@@ -77,3 +77,37 @@ export function matchGlobPattern(pattern: string, testPath: string): boolean {
     return false;
   }
 }
+
+export function globToRegex(pattern: string): RegExp {
+  const normalizedPattern = pattern.replace(/\\/g, '/');
+  let regexPattern = normalizedPattern
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '__DOUBLESTAR__')
+    .replace(/\*/g, '[^/]*')
+    .replace(/__DOUBLESTAR__/g, '.*');
+
+  return new RegExp('^' + regexPattern + '$');
+}
+
+export function dnrUrlFilterToRegex(filter: string, isCaseSensitive: boolean = false): RegExp {
+  let pattern = escapeRegex(filter);
+
+  if (pattern.startsWith('\\|\\|')) {
+    pattern = '^(?:https?|file|ftp):\\/\\/(?:[^\\/]+\\.)?' + pattern.substring(4);
+  } else if (pattern.startsWith('\\|')) {
+    pattern = '^' + pattern.substring(2);
+  }
+
+  if (pattern.endsWith('\\|')) {
+    pattern = pattern.substring(0, pattern.length - 2) + '$';
+  }
+
+  pattern = pattern.replace(/\\\*/g, '.*');
+  pattern = pattern.replace(/\\\^/g, '(?:[^a-zA-Z0-9_\\-\\.\\%]|$)');
+
+  try {
+    return new RegExp(pattern, isCaseSensitive ? '' : 'i');
+  } catch (e) {
+    return new RegExp('$.');
+  }
+}

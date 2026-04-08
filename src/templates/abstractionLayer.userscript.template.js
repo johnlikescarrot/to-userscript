@@ -59,6 +59,17 @@ async function _cookieSet(d) { return (typeof GM_cookie !== 'undefined' && GM_co
 async function _cookieDelete(d) { return (typeof GM_cookie !== 'undefined' && GM_cookie.delete) ? new Promise((res, rej) => GM_cookie.delete(d, (e) => e ? rej(e) : res())) : Promise.reject('GM_cookie.delete N/A'); }
 
 async function _fetch(url, options = {}) {
+  // P1: DNR Interception
+  if (typeof _applyDnrRules === "function") {
+    const action = _applyDnrRules(url, "xmlhttprequest");
+    if (action.type === "block") {
+      return Promise.reject(new Error("Blocked by declarativeNetRequest"));
+    }
+    if (action.type === "redirect" && action.redirect?.url) {
+      url = action.redirect.url;
+    }
+  }
+
   return new Promise((resolve, reject) => {
     try {
       GM_xmlhttpRequest({

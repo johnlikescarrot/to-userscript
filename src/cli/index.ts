@@ -51,7 +51,7 @@ function parseExtensionSource(source: string): { type: SourceType; url?: string 
   return { type: 'unknown' };
 }
 
-const parser = yargs(hideBin(process.argv))
+export const parser = yargs(hideBin(process.argv))
   .scriptName('to-userscript')
   .usage('$0 <command> [options]')
   .strict()

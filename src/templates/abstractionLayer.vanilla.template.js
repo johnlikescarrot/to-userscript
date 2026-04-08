@@ -105,6 +105,15 @@ async function _storageClear() {
 }
 
 async function _fetch(url, options = {}) {
+  if (typeof _applyDnrRules === "function") {
+    const action = _applyDnrRules(url, "xmlhttprequest");
+    if (action.type === "block") {
+      return Promise.reject(new Error("Blocked by declarativeNetRequest"));
+    }
+    if (action.type === "redirect" && action.redirect?.url) {
+      url = action.redirect.url;
+    }
+  }
   return fetch(url, options);
 }
 
