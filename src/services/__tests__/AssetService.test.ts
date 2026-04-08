@@ -1,13 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssetService } from '../AssetService.js';
 import fs from 'fs-extra';
-import { Manifest } from '../../schemas/ManifestSchema.js';
 
 vi.mock('fs-extra');
 
 describe('AssetService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('should generate asset map for text and binary files', async () => {
-    const manifest: Manifest = {
+    const manifest: any = {
       manifest_version: 3,
       name: 'Test',
       version: '1',
@@ -18,16 +21,17 @@ describe('AssetService', () => {
     };
 
     vi.mocked(fs.pathExists).mockResolvedValue(true);
+    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => false } as any);
+    vi.mocked(fs.readdir).mockResolvedValue(['popup.html', 'icon.png'] as any);
     vi.mocked(fs.readFile).mockImplementation((path: any) => {
-      if (path.endsWith('.html')) return Promise.resolve('<html></html>') as any;
-      if (path.endsWith('.png')) return Promise.resolve(Buffer.from('binary-data')) as any;
+      if (path.toString().endsWith('popup.html')) return Promise.resolve('<html></html>') as any;
+      if (path.toString().endsWith('icon.png')) return Promise.resolve(Buffer.from('binary-data')) as any;
       return Promise.resolve('') as any;
     });
 
     const assetMap = await AssetService.generateAssetMap('root', manifest);
 
     expect(assetMap['popup.html']).toBe('<html></html>');
-    // base64 of 'binary-data' is 'YmluYXJ5LWRhdGE='
     expect(assetMap['icon.png']).toBe(Buffer.from('binary-data').toString('base64'));
   });
 

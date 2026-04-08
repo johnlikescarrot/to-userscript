@@ -34,7 +34,13 @@ export class AssembleStep extends Step {
             .toLowerCase() || 'extension-' + Date.now();
     }
 
-    const mainPolyfill = (await PolyfillService.build(target, assetMap, manifest.raw, scriptId)) || '';
+    const dnrRules = context.get<Record<string, any[]>>('dnrRules') || {};
+    const enabledRulesetIds = manifest.dnr_rule_resources
+      .filter(r => r.enabled)
+      .map(r => r.id);
+    if (!enabledRulesetIds.includes("default")) enabledRulesetIds.push("default");
+
+    const mainPolyfill = (await PolyfillService.build(target, assetMap, manifest.raw, scriptId, dnrRules, enabledRulesetIds)) || '';
     const orchestrationTemplate = await TemplateService.load('orchestration');
 
     // Build per-config execution logic to support matches/exclude_matches fidelity
@@ -162,6 +168,7 @@ ${header}
     // --- Utils
     const escapeRegex = ${RegexUtils.escapeRegex.toString()};
     const convertMatchPatternToRegExpString = ${RegexUtils.convertMatchPatternToRegExpString.toString()};
+    const dnrUrlFilterToRegex = ${RegexUtils.dnrUrlFilterToRegex.toString()};
     const convertMatchPatternToRegExp = ${RegexUtils.convertMatchPatternToRegExp.toString()};
 
     // --- Scoped Assets bootstrap

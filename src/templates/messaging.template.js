@@ -8,6 +8,13 @@ function createEventBus(scopeId, type = "page") {
     const msg = ev.data;
     if (!msg || msg.__eventBus !== true || msg.scopeId !== scopeId) return;
 
+    // Handle intra-window broadcast from other bus instances
+    // P1: Handle broadcasted events from the same window context
+    if (msg.__isBroadcast && ev.source === window) {
+      (handlers[msg.event] || []).forEach((fn) => fn(msg.payload, { source: ev.source }));
+      return;
+    }
+
     if (type === "page" && msg.event === "__INIT__") {
       if (ev.source && !children.includes(ev.source)) children.push(ev.source);
       return;
@@ -22,15 +29,25 @@ function createEventBus(scopeId, type = "page") {
 
   return {
     on(event, fn) { handlers[event] = handlers[event] || []; handlers[event].push(fn); },
-    emit(event, payload, { to } = {}) {
+    emit(event, payload, { to, __isBroadcast = false } = {}) {
       const envelope = { __eventBus: true, scopeId, event, payload };
       if (to) {
         to.postMessage(envelope, "*");
       } else {
-        // Broadcast
+        // Local handlers
         (handlers[event] || []).forEach(fn => fn(payload, { source: window }));
+
+        // Downward broadcast (to iframes)
         if (type === "page") children.forEach(c => c.postMessage(envelope, "*"));
-        else window.parent.postMessage(envelope, "*");
+
+        // Upward broadcast (to parent)
+        if (type === "iframe") window.parent.postMessage(envelope, "*");
+
+        // Intra-window broadcast (to other instances in same window/context)
+        // P1: Loop prevention via __isBroadcast flag
+        if (!__isBroadcast) {
+          window.postMessage({ ...envelope, __isBroadcast: true }, "*");
+        }
       }
     }
   };

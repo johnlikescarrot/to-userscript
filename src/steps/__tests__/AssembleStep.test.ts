@@ -45,7 +45,8 @@ describe('AssembleStep: Industrial Robustness', () => {
       description: 'Elite description',
       raw: {},
       content_scripts: [{ matches: ['https://elite.com/*'], js: ['content.js'] }],
-      action: { default_popup: 'pop.html' }
+      action: { default_popup: 'pop.html' },
+      dnr_rule_resources: []
     });
 
     // Mock resources containing GM_webRequest usage
@@ -53,6 +54,7 @@ describe('AssembleStep: Industrial Robustness', () => {
         jsContents: { 'content.js': 'GM_webRequest({ selector: "*" });' },
         cssContents: {}
     });
+    ctx.set('dnrRules', {});
     ctx.set('assetMap', {});
 
     const step = new AssembleStep();
@@ -80,8 +82,10 @@ describe('AssembleStep: Industrial Robustness', () => {
           version: '1',
           raw: {},
           content_scripts: [],
-          action: {} // Ensure action is defined
+          action: {}, // Ensure action is defined
+          dnr_rule_resources: []
       });
+      ctx.set('dnrRules', {});
       ctx.set('resources', { jsContents: {}, cssContents: {} });
       ctx.set('assetMap', {});
 

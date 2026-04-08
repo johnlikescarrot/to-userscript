@@ -3,6 +3,7 @@ import path from 'path';
 import { AssetMap } from '../core/types.js';
 import { Manifest } from '../schemas/ManifestSchema.js';
 import { normalizePath } from '../utils/PathUtils.js';
+import { globToRegex, matchGlobPattern } from "../utils/RegexUtils.js";
 
 export class AssetService {
   public static readonly MIME_MAP: Record<string, string> = {
@@ -69,6 +70,22 @@ export class AssetService {
       }
     };
 
+    // Recursive directory discovery to ensure all files are available for glob matching
+    const allFiles: string[] = [];
+    const walk = async (dir: string) => {
+      const list = await fs.readdir(dir);
+      for (const file of list) {
+        const fullPath = path.join(dir, file);
+        const stat = await fs.stat(fullPath);
+        if (stat.isDirectory()) {
+          await walk(fullPath);
+        } else {
+          allFiles.push(path.relative(extensionRoot, fullPath));
+        }
+      }
+    };
+    if (await fs.pathExists(extensionRoot)) await walk(extensionRoot);
+
     const initialFiles = new Set<string>();
     if (manifest.manifest_version === 2) {
       if (manifest.options_ui?.page) initialFiles.add(manifest.options_ui.page);
@@ -81,10 +98,21 @@ export class AssetService {
     }
 
     for (const f of initialFiles) await processFile(f);
+
+    // Industrial Glob Resolution for web_accessible_resources
     if (manifest.web_accessible_resources) {
       for (const res of manifest.web_accessible_resources) {
-        if (typeof res === 'string') await processFile(res);
-        else for (const rp of res.resources) await processFile(rp);
+        const patterns = typeof res === "string" ? [res] : res.resources;
+        // P1: Pre-compile regex for performance optimization
+        const regexes = patterns.map(p => {
+          try { return globToRegex(p); }
+          catch(e) { return null; }
+        }).filter(r => r !== null) as RegExp[];
+
+        for (const regex of regexes) {
+          const matched = allFiles.filter(f => regex.test(f));
+          for (const m of matched) await processFile(m);
+        }
       }
     }
 

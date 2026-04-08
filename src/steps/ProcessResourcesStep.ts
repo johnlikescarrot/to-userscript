@@ -21,5 +21,19 @@ export class ProcessResourcesStep extends Step {
       manifest.background_scripts
     );
     context.set('backgroundJs', backgroundJs);
+
+    // Load Static DNR Rules
+    const dnrRules: Record<string, any[]> = {};
+    for (const res of manifest.dnr_rule_resources) {
+      const fullPath = path.join(inputDir, res.path);
+      if (await fs.pathExists(fullPath)) {
+        try {
+          dnrRules[res.id] = await fs.readJson(fullPath);
+        } catch (e) {
+          context.logger.warn(`Failed to parse DNR ruleset ${res.id} at ${res.path}`);
+        }
+      }
+    }
+    context.set('dnrRules', dnrRules);
   }
 }

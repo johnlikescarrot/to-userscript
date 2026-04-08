@@ -3,7 +3,8 @@ import {
   escapeRegex,
   convertMatchPatternToRegExpString,
   convertMatchPatternToRegExp,
-  matchGlobPattern
+  matchGlobPattern,
+  dnrUrlFilterToRegex
 } from '../RegexUtils.js';
 
 describe('RegexUtils', () => {
@@ -27,7 +28,6 @@ describe('RegexUtils', () => {
     it('should handle *.domain host', () => {
       const res = convertMatchPatternToRegExpString('https://*.google.com/*');
       expect(res).toContain('google\\.com');
-      // Using match to be more flexible with escaping
       expect(res).toMatch(/\[\^\\?\/\]\+/);
     });
 
@@ -58,6 +58,40 @@ describe('RegexUtils', () => {
     it('should handle recursive double star', () => {
       expect(matchGlobPattern('**/*.js', 'scripts/main.js')).toBe(true);
       expect(matchGlobPattern('**/*.js', 'lib/sub/other.js')).toBe(true);
+    });
+  });
+
+  describe('dnrUrlFilterToRegex', () => {
+    it('should handle || domain anchoring', () => {
+      const re = dnrUrlFilterToRegex('||example.com');
+      expect(re.test('https://example.com/')).toBe(true);
+      expect(re.test('http://sub.example.com/path')).toBe(true);
+      expect(re.test('https://not-example.com/')).toBe(false);
+    });
+
+    it('should handle | start anchoring', () => {
+      const re = dnrUrlFilterToRegex('|https://example.com');
+      expect(re.test('https://example.com/')).toBe(true);
+      expect(re.test('http://example.com/')).toBe(false);
+    });
+
+    it('should handle | end anchoring', () => {
+      const re = dnrUrlFilterToRegex('example.com|');
+      expect(re.test('https://example.com')).toBe(true);
+      expect(re.test('https://example.com/path')).toBe(false);
+    });
+
+    it('should handle * wildcards', () => {
+      const re = dnrUrlFilterToRegex('example.com/*/test');
+      expect(re.test('https://example.com/any/test')).toBe(true);
+      expect(re.test('https://example.com/test')).toBe(false);
+    });
+
+    it('should handle ^ separators', () => {
+      const re = dnrUrlFilterToRegex('example.com^');
+      expect(re.test('https://example.com/')).toBe(true);
+      expect(re.test('https://example.com?query')).toBe(true);
+      expect(re.test('https://example.com.extra')).toBe(false);
     });
   });
 });
